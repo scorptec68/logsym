@@ -7,10 +7,10 @@ package logsym
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
-	"unsafe"
 )
 
 // SymID is an offset into the sym file for the symbol entry
@@ -58,9 +58,13 @@ func (entry SymbolEntry) keyString() string {
 	return entry.message + entry.fname + strconv.Itoa(int(entry.line))
 }
 
+func symFileName(baseFileName string) string {
+	return baseFileName + "sym"
+}
+
 // SymFileCreate creates a symbol file and allocate the SymFile data
 func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
-	f, err := os.Create(baseFileName + ".sym")
+	f, err := os.Create(symFileName(baseFileName))
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +78,20 @@ func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
 
 // SymFileOpen opens a sym file and read into map
 func SymFileOpen(baseFileName string) (sym *SymFile, err error) {
+	f, err := os.Open(symFileName(baseFileName))
+	if err != nil {
+		return nil, err
+	}
+	entries := make(map[string]SymbolEntry)
+	sym = &SymFile{
+		file:    f,
+		entries: entries,
+	}
 
+	// read in all the entries starting at the start of the file
+	for {
+
+	}
 }
 
 // SymFileClose closes the file
@@ -97,6 +114,38 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	}
 	sym.nextSymID += SymID(len)
 	return sym.nextSymID, nil
+}
+
+// Read the SymbolEntry using a reader
+func (entry SymbolEntry) Read(r io.Reader) (err error) {
+	byteOrder := binary.LittleEndian
+
+	err = binary.Read(r, byteOrder, &entry.numAccesses)
+	if err != nil {
+		return err
+	}
+
+	err = binary.Read(r, byteOrder, &entry.line)
+	if err != nil {
+		return err
+	}
+
+	var lenBytes uint32
+	err = binary.Read(r, byteOrder, &lenBytes)
+	if err != nil {
+		return err
+	}
+
+	msgBytes := make([]byte, lenBytes)
+	n, err := r.Read(msgBytes)
+	if err != nil {
+		return err
+	}
+	if n != int(lenBytes) {
+		return fmt.Errorf("Failed to read %v bytes", lenBytes)
+	}
+
+	// more fields to read in...
 }
 
 /*
@@ -123,13 +172,13 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 	byteOrder := binary.LittleEndian
 
-	length += uint32(unsafe.Sizeof(entry.numAccesses))
+	length += binary.Size(entry.NumAccesses)
 	err = binary.Write(w, byteOrder, entry.numAccesses)
 	if err != nil {
 		return 0, err
 	}
 
-	length += uint32(unsafe.Sizeof(entry.line))
+	length += binary.Size(entry.line)
 	err = binary.Write(w, byteOrder, entry.line)
 	if err != nil {
 		return 0, err
@@ -140,7 +189,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 	lenBytes = uint32(len(msgBytes))
 
 	// write length
-	length += uint32(unsafe.Sizeof(lenBytes))
+	length += binary.Size(lenBytes)
 	err = binary.Write(w, byteOrder, lenBytes)
 	if err != nil {
 		return 0, err
@@ -157,7 +206,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 	lenBytes = uint32(len(fnameBytes))
 
 	// write length
-	length += uint32(unsafe.Sizeof(lenBytes))
+	length += binary.Size(lenBytes)
 	err = binary.Write(w, byteOrder, lenBytes)
 	if err != nil {
 		return 0, err
@@ -173,7 +222,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 	// write num keys
 	var numKeys uint32
 	numKeys = uint32(len(entry.keyTypeList))
-	length += uint32(unsafe.Sizeof(numKeys))
+	length += binary.Size(numKeys)
 	err = binary.Write(w, byteOrder, numKeys)
 	if err != nil {
 		return 0, err
@@ -183,7 +232,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 
 		// write type
 		keyType := entry.keyTypeList[i]
-		length += uint32(unsafe.Sizeof(keyType.valueType))
+		length += binary.Size(keyType.valueType)
 		err = binary.Write(w, byteOrder, keyType.valueType)
 		if err != nil {
 			return 0, err
@@ -192,7 +241,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 		// write key length
 		var keyLen uint32
 		keyLen = uint32(len(keyType.key))
-		length += uint32(unsafe.Sizeof(keyLen))
+		length += binary.Size(keyLen)
 		err = binary.Write(w, byteOrder, keyLen)
 		if err != nil {
 			return 0, err
