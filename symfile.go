@@ -6,6 +6,7 @@ package logsym
 // It needs to be looked up frequently as the same bit of code is repeatedly executed.
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -59,7 +60,7 @@ func (entry SymbolEntry) keyString() string {
 }
 
 func symFileName(baseFileName string) string {
-	return baseFileName + "sym"
+	return baseFileName + ".sym"
 }
 
 // SymFileCreate creates a symbol file and allocate the SymFile data
@@ -76,22 +77,45 @@ func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
 	return sym, nil
 }
 
-// SymFileOpen opens a sym file and read into map
-func SymFileOpen(baseFileName string) (sym *SymFile, err error) {
+// SymFileReadin opens a sym file and read into map
+func SymFileReadin(baseFileName string) (entries map[string]SymbolEntry, err error) {
 	f, err := os.Open(symFileName(baseFileName))
 	if err != nil {
 		return nil, err
 	}
-	entries := make(map[string]SymbolEntry)
-	sym = &SymFile{
-		file:    f,
-		entries: entries,
-	}
+	defer f.Close()
+
+	entries = make(map[string]SymbolEntry)
 
 	// read in all the entries starting at the start of the file
+	reader := bufio.NewReader(f)
 	for {
-
+		var entry SymbolEntry
+		err = entry.Read(reader)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		entries[entry.keyString()] = entry
 	}
+	return entries, nil
+}
+
+// SymFileOpenAppend opens up the symFile, read in the entries and get ready for appending to file
+func SymFileOpenAppend(baseFileName string) (sym *SymFile, err error) {
+	entries, err := SymFileReadin(baseFileName)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(symFileName(baseFileName), os.O_APPEND, 0666)
+	if err != nil {
+		return nil, err
+	}
+
+	sym = &SymFile{file: f, entries: entries}
+	return sym, nil
 }
 
 // SymFileClose closes the file
@@ -99,8 +123,7 @@ func (sym *SymFile) SymFileClose() error {
 	return sym.file.Close()
 }
 
-// SymFileAddEntry adds an entry to map if doesn't exist already.
-// If new, then write a sym entry to the file
+// SymFileAddEntry adds an entry to map and to file if doesn't exist already.
 func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	// If already there ...
 	if entry, ok := sym.entries[entry.keyString()]; ok {
@@ -112,7 +135,10 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	sym.nextSymID += SymID(len)
+	sym.entries[entry.keyString()] = entry
+
 	return sym.nextSymID, nil
 }
 
@@ -120,32 +146,92 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 func (entry SymbolEntry) Read(r io.Reader) (err error) {
 	byteOrder := binary.LittleEndian
 
+	// read numAccesses
 	err = binary.Read(r, byteOrder, &entry.numAccesses)
 	if err != nil {
 		return err
 	}
 
+	// read line number
 	err = binary.Read(r, byteOrder, &entry.line)
 	if err != nil {
 		return err
 	}
 
+	// message string length
 	var lenBytes uint32
 	err = binary.Read(r, byteOrder, &lenBytes)
 	if err != nil {
 		return err
 	}
 
+	// message string
 	msgBytes := make([]byte, lenBytes)
 	n, err := r.Read(msgBytes)
 	if err != nil {
 		return err
 	}
 	if n != int(lenBytes) {
-		return fmt.Errorf("Failed to read %v bytes", lenBytes)
+		return fmt.Errorf("Failed to read %v bytes for message", lenBytes)
+	}
+	entry.message = string(msgBytes[:lenBytes])
+
+	// file name length
+	err = binary.Read(r, byteOrder, &lenBytes)
+	if err != nil {
+		return err
 	}
 
-	// more fields to read in...
+	// file name
+	fnameBytes := make([]byte, lenBytes)
+	n, err = r.Read(fnameBytes)
+	if err != nil {
+		return err
+	}
+	if n != int(lenBytes) {
+		return fmt.Errorf("Failed to read %v bytes for file name", lenBytes)
+	}
+	entry.fname = string(fnameBytes[:lenBytes])
+
+	// read in all the key type pairs
+	var numKeys uint32
+	err = binary.Read(r, byteOrder, &numKeys)
+	if err != nil {
+		return err
+	}
+
+	entry.keyTypeList = make([]KeyType, numKeys)
+	for i := 0; i < int(numKeys); i++ {
+		var keyType KeyType
+
+		// read value type
+		err = binary.Read(r, byteOrder, &keyType.valueType)
+		if err != nil {
+			return err
+		}
+
+		// read key length
+		var keyLen uint32
+		err = binary.Read(r, byteOrder, &keyLen)
+		if err != nil {
+			return err
+		}
+
+		// read key string data
+		keyBytes := make([]byte, keyLen)
+		n, err = r.Read(keyBytes)
+		if err != nil {
+			return err
+		}
+		if n != int(lenBytes) {
+			return fmt.Errorf("Failed to read %v bytes for key data", lenBytes)
+		}
+		keyType.key = string(keyBytes)
+
+		entry.keyTypeList[i] = keyType
+	}
+
+	return nil
 }
 
 /*
@@ -160,19 +246,19 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
  *	fname    []byte
  *
  *  numKeys uint32
- *  type1   uint32
+ *  type1   uint8
  *  key1Len uint32
  *  key1    []byte
- *  type2   uint32
+ *  type2   uint8
  *  key2len uint32
  *  key2    []byte
  *  ...
  */
 // Write() writes the symbol entry using the writer
-func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
+func (entry SymbolEntry) Write(w io.Writer) (length int, err error) {
 	byteOrder := binary.LittleEndian
 
-	length += binary.Size(entry.NumAccesses)
+	length += binary.Size(entry.numAccesses)
 	err = binary.Write(w, byteOrder, entry.numAccesses)
 	if err != nil {
 		return 0, err
@@ -196,7 +282,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 	}
 
 	// write actual bytes
-	length += lenBytes
+	length += int(lenBytes)
 	err = binary.Write(w, byteOrder, msgBytes)
 	if err != nil {
 		return 0, err
@@ -213,7 +299,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 	}
 
 	// write actual bytes
-	length += lenBytes
+	length += int(lenBytes)
 	err = binary.Write(w, byteOrder, fnameBytes)
 	if err != nil {
 		return 0, err
@@ -249,7 +335,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length uint32, err error) {
 
 		// write key bytes
 		keyBytes := []byte(keyType.key)
-		length += keyLen
+		length += int(keyLen)
 		err = binary.Write(w, byteOrder, keyBytes)
 		if err != nil {
 			return 0, err
