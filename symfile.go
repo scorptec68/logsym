@@ -25,10 +25,10 @@ const (
 	TypeInt32 LogValueType = iota
 	TypeUint32
 	TypeInt64
-	Typeuint64
+	TypeUint64
 	TypeDouble
 	TypeByteData
-	TypeStringNull
+	TypeString
 )
 
 // KeyType consists of a key and its associated type
@@ -47,11 +47,35 @@ type SymbolEntry struct {
 	keyTypeList []KeyType
 }
 
+/*
+ * SymbolEntry on-disk format:
+ *
+ *	numAccesses uint64
+ *	line    uint32
+ *
+ *  messageLen uint32
+ *	message []byte
+ *
+ *  fnameLen uint32
+ *	fname    []byte
+ *
+ *  numKeys uint32
+ *
+ *  type1   uint8
+ *  key1Len uint32
+ *  key1    []byte
+ *
+ *  type2   uint8
+ *  key2len uint32
+ *  key2    []byte
+ *  ...
+ */
+
 // SymFile is the top level object for the .sym file
 type SymFile struct {
 	entries   map[string]SymbolEntry // use message+fname+line as key
-	file      *os.File
-	nextSymID SymID
+	file      *os.File               // file used for appending symbols to the end
+	nextSymID SymID                  // the next id/offset for the next symbol to be added
 }
 
 // string of symbol entry used for key
@@ -59,11 +83,51 @@ func (entry SymbolEntry) keyString() string {
 	return entry.message + entry.fname + strconv.Itoa(int(entry.line))
 }
 
+func (sym SymFile) String() string {
+	return fmt.Sprintf("SymFile<nextSymId: %v, entries: %v>", sym.nextSymID, sym.entries)
+}
+
+func (entry SymbolEntry) String() string {
+	return fmt.Sprintf("Entry<symId: %v, numAccesses: %v, message: \"%v\", fname: \"%v\", line: %v, keyTypes: %v>",
+		entry.symID, entry.numAccesses, entry.message, entry.fname, entry.line, entry.keyTypeList)
+}
+
+func (keyType KeyType) String() string {
+	return fmt.Sprintf("<key: \"%v\", type: %v>", keyType.key, keyType.valueType)
+}
+
+func (valueType LogValueType) String() string {
+	switch valueType {
+	case TypeInt32:
+		return "Int32"
+	case TypeInt64:
+		return "Int64"
+	case TypeUint32:
+		return "Uint32"
+	case TypeUint64:
+		return "Uint64"
+	case TypeDouble:
+		return "Double"
+	case TypeString:
+		return "String"
+	case TypeByteData:
+		return "ByteData"
+	default:
+		return "Unknown type"
+	}
+}
+
+// The file name of the symbol file
 func symFileName(baseFileName string) string {
 	return baseFileName + ".sym"
 }
 
-// SymFileCreate creates a symbol file and allocate the SymFile data
+// SymFileRemove deletes the sym file given base name
+func SymFileRemove(baseFileName string) error {
+	return os.Remove(symFileName(baseFileName))
+}
+
+// SymFileCreate creates a new symbol file and allocates the SymFile data
 func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
 	f, err := os.Create(symFileName(baseFileName))
 	if err != nil {
@@ -77,7 +141,7 @@ func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
 	return sym, nil
 }
 
-// SymFileReadin opens a sym file and read into map
+// SymFileReadin reads a whole sym file into a map
 func SymFileReadin(baseFileName string) (entries map[string]SymbolEntry, err error) {
 	f, err := os.Open(symFileName(baseFileName))
 	if err != nil {
@@ -87,20 +151,20 @@ func SymFileReadin(baseFileName string) (entries map[string]SymbolEntry, err err
 
 	entries = make(map[string]SymbolEntry)
 
-	// read in all the entries starting at the start of the file
+	// read in all the entries from the start of the file
 	reader := bufio.NewReader(f)
 	for {
 		var entry SymbolEntry
 		err = entry.Read(reader)
 		if err == io.EOF {
-			break
+			return entries, nil
 		}
 		if err != nil {
 			return nil, err
 		}
+		fmt.Printf("entry: %v\n", entry)
 		entries[entry.keyString()] = entry
 	}
-	return entries, nil
 }
 
 // SymFileOpenAppend opens up the symFile, read in the entries and get ready for appending to file
@@ -123,6 +187,11 @@ func (sym *SymFile) SymFileClose() error {
 	return sym.file.Close()
 }
 
+// CreateSymbolEntry creates a symbol entry
+func CreateSymbolEntry(message string, filename string, line uint32, keyTypes []KeyType) SymbolEntry {
+	return SymbolEntry{message: message, fname: filename, line: line, keyTypeList: keyTypes}
+}
+
 // SymFileAddEntry adds an entry to map and to file if doesn't exist already.
 func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	// If already there ...
@@ -136,6 +205,7 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 		return 0, err
 	}
 
+	entry.symID = sym.nextSymID
 	sym.nextSymID += SymID(len)
 	sym.entries[entry.keyString()] = entry
 
@@ -143,7 +213,7 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 }
 
 // Read the SymbolEntry using a reader
-func (entry SymbolEntry) Read(r io.Reader) (err error) {
+func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	byteOrder := binary.LittleEndian
 
 	// read numAccesses
@@ -151,12 +221,14 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
+	fmt.Printf("numAccesses: %v\n", entry.numAccesses)
 
 	// read line number
 	err = binary.Read(r, byteOrder, &entry.line)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("line: %v\n", entry.line)
 
 	// message string length
 	var lenBytes uint32
@@ -164,6 +236,7 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
+	fmt.Printf("msg len: %v\n", lenBytes)
 
 	// message string
 	msgBytes := make([]byte, lenBytes)
@@ -175,12 +248,14 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 		return fmt.Errorf("Failed to read %v bytes for message", lenBytes)
 	}
 	entry.message = string(msgBytes[:lenBytes])
+	fmt.Printf("msg: %v\n", entry.message)
 
 	// file name length
 	err = binary.Read(r, byteOrder, &lenBytes)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("fname len: %v\n", lenBytes)
 
 	// file name
 	fnameBytes := make([]byte, lenBytes)
@@ -192,6 +267,7 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 		return fmt.Errorf("Failed to read %v bytes for file name", lenBytes)
 	}
 	entry.fname = string(fnameBytes[:lenBytes])
+	fmt.Printf("fname: %v\n", entry.fname)
 
 	// read in all the key type pairs
 	var numKeys uint32
@@ -199,6 +275,7 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
+	fmt.Printf("num keys: %v\n", numKeys)
 
 	entry.keyTypeList = make([]KeyType, numKeys)
 	for i := 0; i < int(numKeys); i++ {
@@ -209,6 +286,7 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
+		fmt.Printf("type: %v\n", keyType.valueType)
 
 		// read key length
 		var keyLen uint32
@@ -216,6 +294,7 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
+		fmt.Printf("key len: %v\n", keyLen)
 
 		// read key string data
 		keyBytes := make([]byte, keyLen)
@@ -223,10 +302,11 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
-		if n != int(lenBytes) {
-			return fmt.Errorf("Failed to read %v bytes for key data", lenBytes)
+		if n != int(keyLen) {
+			return fmt.Errorf("Failed to read %v bytes for key data got %v bytes", keyLen, n)
 		}
 		keyType.key = string(keyBytes)
+		fmt.Printf("key: %v\n", keyType.key)
 
 		entry.keyTypeList[i] = keyType
 	}
@@ -234,26 +314,6 @@ func (entry SymbolEntry) Read(r io.Reader) (err error) {
 	return nil
 }
 
-/*
- * Format:
- *	numAccesses uint64
- *	line    uint32
- *
- *  messageLen uint32
- *	message []byte
- *
- *  fnameLen uint32
- *	fname    []byte
- *
- *  numKeys uint32
- *  type1   uint8
- *  key1Len uint32
- *  key1    []byte
- *  type2   uint8
- *  key2len uint32
- *  key2    []byte
- *  ...
- */
 // Write() writes the symbol entry using the writer
 func (entry SymbolEntry) Write(w io.Writer) (length int, err error) {
 	byteOrder := binary.LittleEndian
