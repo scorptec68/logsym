@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 )
 
 // SymID is an offset into the sym file for the symbol entry
@@ -84,7 +86,24 @@ func (entry SymbolEntry) keyString() string {
 }
 
 func (sym SymFile) String() string {
-	return fmt.Sprintf("SymFile<nextSymId: %v, entries: %v>", sym.nextSymID, sym.entries)
+	var str strings.Builder
+	fmt.Fprintf(&str, "SymFile\n")
+	fmt.Fprintf(&str, "  nextSymId: %v\n", sym.nextSymID)
+	fmt.Fprintf(&str, "  entries: \n")
+
+	// sort keys
+	var keys []string
+	for k := range sym.entries {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// output values in key sorted order
+	for _, k := range keys {
+		fmt.Fprintf(&str, "    Key: \"%v\"\n", k)
+		fmt.Fprintf(&str, "    Value: %v\n", sym.entries[k])
+	}
+	return str.String()
 }
 
 func (entry SymbolEntry) String() string {
@@ -162,7 +181,7 @@ func SymFileReadin(baseFileName string) (entries map[string]SymbolEntry, err err
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("entry: %v\n", entry)
+		//fmt.Printf("entry: %v\n", entry)
 		entries[entry.keyString()] = entry
 	}
 }
@@ -178,7 +197,12 @@ func SymFileOpenAppend(baseFileName string) (sym *SymFile, err error) {
 		return nil, err
 	}
 
-	sym = &SymFile{file: f, entries: entries}
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	sym = &SymFile{file: f, entries: entries, nextSymID: SymID(stat.Size())}
 	return sym, nil
 }
 
@@ -204,11 +228,13 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	if err != nil {
 		return 0, err
 	}
+	//fmt.Printf("len of write entry: %v\n", len)
 
 	entry.symID = sym.nextSymID
 	sym.nextSymID += SymID(len)
 	sym.entries[entry.keyString()] = entry
 
+	//fmt.Printf("sym.nextSymID: %v\n", sym.nextSymID)
 	return sym.nextSymID, nil
 }
 
@@ -221,14 +247,14 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("numAccesses: %v\n", entry.numAccesses)
+	//fmt.Printf("numAccesses: %v\n", entry.numAccesses)
 
 	// read line number
 	err = binary.Read(r, byteOrder, &entry.line)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("line: %v\n", entry.line)
+	//fmt.Printf("line: %v\n", entry.line)
 
 	// message string length
 	var lenBytes uint32
@@ -236,7 +262,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("msg len: %v\n", lenBytes)
+	//fmt.Printf("msg len: %v\n", lenBytes)
 
 	// message string
 	msgBytes := make([]byte, lenBytes)
@@ -248,14 +274,14 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		return fmt.Errorf("Failed to read %v bytes for message", lenBytes)
 	}
 	entry.message = string(msgBytes[:lenBytes])
-	fmt.Printf("msg: %v\n", entry.message)
+	//fmt.Printf("msg: %v\n", entry.message)
 
 	// file name length
 	err = binary.Read(r, byteOrder, &lenBytes)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("fname len: %v\n", lenBytes)
+	//fmt.Printf("fname len: %v\n", lenBytes)
 
 	// file name
 	fnameBytes := make([]byte, lenBytes)
@@ -267,7 +293,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		return fmt.Errorf("Failed to read %v bytes for file name", lenBytes)
 	}
 	entry.fname = string(fnameBytes[:lenBytes])
-	fmt.Printf("fname: %v\n", entry.fname)
+	//fmt.Printf("fname: %v\n", entry.fname)
 
 	// read in all the key type pairs
 	var numKeys uint32
@@ -275,7 +301,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("num keys: %v\n", numKeys)
+	//fmt.Printf("num keys: %v\n", numKeys)
 
 	entry.keyTypeList = make([]KeyType, numKeys)
 	for i := 0; i < int(numKeys); i++ {
@@ -286,7 +312,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("type: %v\n", keyType.valueType)
+		//fmt.Printf("type: %v\n", keyType.valueType)
 
 		// read key length
 		var keyLen uint32
@@ -294,7 +320,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("key len: %v\n", keyLen)
+		//fmt.Printf("key len: %v\n", keyLen)
 
 		// read key string data
 		keyBytes := make([]byte, keyLen)
@@ -306,7 +332,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 			return fmt.Errorf("Failed to read %v bytes for key data got %v bytes", keyLen, n)
 		}
 		keyType.key = string(keyBytes)
-		fmt.Printf("key: %v\n", keyType.key)
+		//fmt.Printf("key: %v\n", keyType.key)
 
 		entry.keyTypeList[i] = keyType
 	}

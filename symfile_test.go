@@ -32,6 +32,8 @@ func ExampleSymFile() {
 			return
 		}
 	}
+	fmt.Println("Symfile after create")
+	fmt.Printf("%v", sym)
 	sym.SymFileClose()
 
 	sym, err = SymFileOpenAppend("testfile")
@@ -39,7 +41,8 @@ func ExampleSymFile() {
 		fmt.Printf("Sym open error: %v", err)
 		return
 	}
-	fmt.Printf("Sym file: %v\n", sym)
+	fmt.Println("Symfile after readin")
+	fmt.Printf("%v", sym)
 
 	//Output:
 }
