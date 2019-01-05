@@ -22,6 +22,9 @@ type SymID uint64
 // The LogValueType consists of various standard types
 type LogValueType uint8
 
+// LogLevel is the level of logging eg. debug or info
+type LogLevel uint8
+
 // Value types supported in log
 const (
 	TypeInt32 LogValueType = iota
@@ -31,6 +34,13 @@ const (
 	TypeDouble
 	TypeByteData
 	TypeString
+)
+
+const (
+	LevelDebug LogLevel = iota
+	LevelInfo
+	LevelWarn
+	LevelError
 )
 
 // KeyType consists of a key and its associated type
@@ -43,6 +53,7 @@ type KeyType struct {
 type SymbolEntry struct {
 	symID       SymID
 	numAccesses uint64
+	level       LogLevel
 	message     string
 	fname       string
 	line        uint32
@@ -52,11 +63,13 @@ type SymbolEntry struct {
 /*
  * SymbolEntry on-disk format:
  *
+ *	symID       uint64
  *	numAccesses uint64
- *	line    uint32
+ *  level       uint8
+ *	line        uint32
  *
  *  messageLen uint32
- *	message []byte
+ *	message    []byte
  *
  *  fnameLen uint32
  *	fname    []byte
@@ -75,9 +88,9 @@ type SymbolEntry struct {
 
 // SymFile is the top level object for the .sym file
 type SymFile struct {
-	entries   map[string]SymbolEntry // use message+fname+line as key
-	file      *os.File               // file used for appending symbols to the end
-	nextSymID SymID                  // the next id/offset for the next symbol to be added
+	entries   map[string]*SymbolEntry // use message+fname+line as key
+	file      *os.File                // file used for appending symbols to the end
+	nextSymID SymID                   // the next id/offset for the next symbol to be added
 }
 
 // string of symbol entry used for key
@@ -89,7 +102,7 @@ func (sym SymFile) String() string {
 	var str strings.Builder
 	fmt.Fprintf(&str, "SymFile\n")
 	fmt.Fprintf(&str, "  nextSymId: %v\n", sym.nextSymID)
-	fmt.Fprintf(&str, "  entries: \n")
+	fmt.Fprintf(&str, "  entries:\n")
 
 	// sort keys
 	var keys []string
@@ -107,8 +120,8 @@ func (sym SymFile) String() string {
 }
 
 func (entry SymbolEntry) String() string {
-	return fmt.Sprintf("Entry<symId: %v, numAccesses: %v, message: \"%v\", fname: \"%v\", line: %v, keyTypes: %v>",
-		entry.symID, entry.numAccesses, entry.message, entry.fname, entry.line, entry.keyTypeList)
+	return fmt.Sprintf("Entry<symId: %v, numAccesses: %v, level: %v, message: \"%v\", fname: \"%v\", line: %v, keyTypes: %v>",
+		entry.symID, entry.numAccesses, entry.level, entry.message, entry.fname, entry.line, entry.keyTypeList)
 }
 
 func (keyType KeyType) String() string {
@@ -136,6 +149,21 @@ func (valueType LogValueType) String() string {
 	}
 }
 
+func (level LogLevel) String() string {
+	switch level {
+	case LevelDebug:
+		return "DEBUG"
+	case LevelError:
+		return "ERROR"
+	case LevelInfo:
+		return "INFO"
+	case LevelWarn:
+		return "WARN"
+	default:
+		return "Unknown Log Level"
+	}
+}
+
 // The file name of the symbol file
 func symFileName(baseFileName string) string {
 	return baseFileName + ".sym"
@@ -152,7 +180,7 @@ func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
 	if err != nil {
 		return nil, err
 	}
-	entries := make(map[string]SymbolEntry)
+	entries := make(map[string]*SymbolEntry)
 	sym = &SymFile{
 		file:    f,
 		entries: entries,
@@ -161,14 +189,14 @@ func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
 }
 
 // SymFileReadin reads a whole sym file into a map
-func SymFileReadin(baseFileName string) (entries map[string]SymbolEntry, err error) {
+func SymFileReadin(baseFileName string) (entries map[string]*SymbolEntry, err error) {
 	f, err := os.Open(symFileName(baseFileName))
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	entries = make(map[string]SymbolEntry)
+	entries = make(map[string]*SymbolEntry)
 
 	// read in all the entries from the start of the file
 	reader := bufio.NewReader(f)
@@ -182,7 +210,7 @@ func SymFileReadin(baseFileName string) (entries map[string]SymbolEntry, err err
 			return nil, err
 		}
 		//fmt.Printf("entry: %v\n", entry)
-		entries[entry.keyString()] = entry
+		entries[entry.keyString()] = &entry
 	}
 }
 
@@ -223,16 +251,17 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 		entry.numAccesses++
 		return entry.symID, nil
 	}
+
 	// else new symbol entry
+	entry.symID = sym.nextSymID
 	len, err := entry.Write(sym.file)
 	if err != nil {
 		return 0, err
 	}
 	//fmt.Printf("len of write entry: %v\n", len)
 
-	entry.symID = sym.nextSymID
 	sym.nextSymID += SymID(len)
-	sym.entries[entry.keyString()] = entry
+	sym.entries[entry.keyString()] = &entry
 
 	//fmt.Printf("sym.nextSymID: %v\n", sym.nextSymID)
 	return sym.nextSymID, nil
@@ -243,11 +272,25 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	byteOrder := binary.LittleEndian
 
 	// read numAccesses
+	err = binary.Read(r, byteOrder, &entry.symID)
+	if err != nil {
+		return err
+	}
+	//fmt.Printf("symID: %v\n", entry.symID)
+
+	// read numAccesses
 	err = binary.Read(r, byteOrder, &entry.numAccesses)
 	if err != nil {
 		return err
 	}
 	//fmt.Printf("numAccesses: %v\n", entry.numAccesses)
+
+	// read level
+	err = binary.Read(r, byteOrder, &entry.level)
+	if err != nil {
+		return err
+	}
+	//fmt.Printf("level: %v\n", entry.level)
 
 	// read line number
 	err = binary.Read(r, byteOrder, &entry.line)
@@ -344,8 +387,21 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 func (entry SymbolEntry) Write(w io.Writer) (length int, err error) {
 	byteOrder := binary.LittleEndian
 
+	length += binary.Size(entry.symID)
+	err = binary.Write(w, byteOrder, entry.symID)
+	if err != nil {
+		return 0, err
+	}
+	//fmt.Printf("symId: %v\n", entry.symID)
+
 	length += binary.Size(entry.numAccesses)
 	err = binary.Write(w, byteOrder, entry.numAccesses)
+	if err != nil {
+		return 0, err
+	}
+
+	length += binary.Size(entry.level)
+	err = binary.Write(w, byteOrder, entry.level)
 	if err != nil {
 		return 0, err
 	}
