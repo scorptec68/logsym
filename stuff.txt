@@ -1,0 +1,241 @@
+
+
+msg, key1, val1, key2, val2
+
+int i = 5;
+char *str = "hi";
+
+log-level - debug/info/warn/error
+file
+line
+datetime
+fred.c, line 123, 23/Aug/17 @ 10.42pm +10
+log_debug_printf("this is just a test - i = %d, str = %s", i, str);
+
+
+print-provider.log - grows to fixed size and then rotates internally
+- contains, time stamp/offset, value, type, offset value 
+print-provider.sym - contains the format string, file, line, level
+
+
+print-provider.sym (grows continuously)
+idx#1, fred.c, line 123, debug, "this is just a test - i = %d, str = %s"
+
+print-provider.log (rotates internally)
+1, 5, "hi", 23/Aug/17 @ 10.42.23.123pm +10
+milliseconds since epoch (gettimeofday)
+format:
+rec-len, index-in-sym, date, v1, v2, v3, ....
+
+Q: how to know where the head of the log is at startup of reading
+Where do we store it?
+It will have latest date in it and we just need to find the head at startup.
+Binary search thru records.
+Keep a file with pointer which updates periodically and go searching from there.
+Do we store tail as well so we know where to read from.
+
+T, tail points to the oldest record
+H, head points to _after_ the newest record
+
+1. initially before wrap - traverse from Tail to Head
+-------------------------------------------------------------
+^                           ^
+T                           H
+#1                          #85
+records exist from #1 to and including #84
+next one will be #85 if it fits
+
+2. just wrapped for 1st time
+-------------------------------------------------------------
+^      ^     ^
+       H     T
+#142   #143   #3 (rec#1 and rec#2 were overwritten or partially overwritten)
+   
+Tail move to next complete record after the head record.
+If the head record overwrites 2 records then the tail will point to the 3rd record.
+
+-------------------------------------------------------------
+                    ^   ^
+                    H   T
+
+Data between H (newest) and T (oldest) is overwritten oldest partial record.
+From H to start of log record.
+
+print-provider.hd
+print-provider.sym
+print-provider.log
+
+.sym: fred.c, line 123, debug, "this is just a test - i = %d, str = %s"
+.log: rec-len, offset-in-sym, date, v1, v2, v3, ....
+
+hash-table used to load up the sym file into memory at startup.
+As a new entry is given by API, we look up hash and if not there then write a new entry to the sym file.
+
+
+logger.debug(msg, k1, v1, k2, v2, ....)
+logger.debug(msg string, k1 string, v1 interface{}, k2 string, v2 interface{}, ...)
+logger.debug(msg string, keyvals ...interface{})
+
+Each record can have a LSN (log sequence number)
+The LSN is 64 bit number.
+Chance of correct number is very small so can work out head and tail.
+A header file can save time traversing where the head and tail are.
+
+There are 2 types of information:
+(1) type information which points to line of code
+(2) instance information which varies on each instance in time
+
+(1) has such things as:
+* sym# - uint64
+* message string
+* file - null term string
+* line - uint32
+* key, type list e.g. {("jobid", uint64), ("printerid", string) }
+-> null term string, uint8 (type-id)
+
+(2) has such things as:
+* LSN - uint64 - increment each entry added
+* sym# - uint64 - pointer into sym file
+* timestamp (millis offset from GMT) secs uint64, nanos uint64
+* value list len - uint32 - length in bytes of value list section
+* value list  e.g. {23, 32-len, "kitchen printer"}
+-> fixed fields and variable length fields (length prefixed)
+
+(1) resides in file.sym
+(2) resides in file.log
+
+API
+===
+- Need to add one record and one sym entry at a time
+- Be able to traverse log records or sym entries separately
+- Be able to search for log records
+- Be able to search for sym entries
+
+Objects/Types
+-------------
+Log
+SymbolEntry
+RecordEntry
+symId
+lsn
+KeyTypeList
+ValueList
+ValueType
+
+
+* creation
+CreateLog(basePath, fileSizeKb) -> error, log
+---
+#1
+log.SymNew() -> error, symId
+log.SymAddMessage(symId, message) -> error
+log.SymAddFile(symId, file) -> error
+log.SymAddLine(symId, line) -> error
+log.SymAddKeyTypeList(symId, keyTypeList) -> error
+log.SymCommit(symId) -> error, symid
+(If Sym Entry already exists, return error and the existing symid)
+
+#2
+log.SymNew() -> error, SymbolEntry
+symbolEntry.SetMessage(message)
+symbolEntry.SetFile(file)
+symbolEntry.SetLine(line)
+symbolEntry.SetKeyTypeList(keyTypeList)
+log.SymCommit(symbolEntry) -> error, symId
+---
+#1
+log.RecordNew() -> error, lsn
+log.RecordAddValueList(lsn, valueList) -> error
+log.RecordAddTimestamp(lsn, timestamp) -> error
+log.RecordAddSym(lsn, symId) -> error
+log.RecordCommit(lsn) -> error
+#2
+log.RecordNew() -> error, RecordEntry
+record.SetValueList(valueList)
+record.SetTimestamp(timestamp)
+record.SetSym(symId)
+log.RecordCommit(recordEntry) -> error, lsn
+
+---
+
+* open
+OpenLog(basePath) -> error, log
+log.Close() -> error
+
+* retrieval (which = first|last|all|n)
+-> on file.log
+log.RecordFindFirst() -> lsn
+log.RecordFindLast() -> lsn
+log.RecordFindKeyList(keyList, which) -> error, lsnList
+---
+#1
+log.RecordSymId(lsn) -> error, symId
+log.RecordValueList(lsn) -> error, valueList
+log.RecordTimestamp(lsn) -> error, time
+#2
+log.RecordGet(lsn) -> error, RecordEntry
+-> on file.sym
+//log.SymFind(message, file, line, keyTypeList) -> error, symId
+log.SymFindKeyList(keyList, which) -> error, symIdList
+log.SymFindFirst() -> symId
+log.SymFindLast() -> symId
+---
+log.SymMessage(symId) -> error, message
+log.SymFile(symId) -> error, file
+log.SymLine(symId) -> error, line
+log.SymKeyTypeList(symId) -> error, keyTypeList
+
+Example:
+Create a log of 2 entries
+log, error := CreateLog("printprovider", 100 * 1024)
+
+symId, error := log.NewSym()
+log.SymAddMessage(symId, "this is a test")
+log.SymAddFile(symId, "fred.c")
+log.SymAddLine(symId, 123)
+log.SymAddKeyTypeList(symId, {"jobid", uint32})
+symId, error := log.SymCommit(symId)
+if error == SymExists then
+   print "sym exists"
+endif
+
+lsn, error := log.NewRecord()
+log.RecordAddSym(lsn, symId)
+log.RecordAddTimestamp(lsn, now)
+log.RecordAddValueList(lsn, {55})
+log.RecordCommit(lsn)
+
+symId, error := log.NewSym()
+log.SymAddMessage(symId, "this is a 2nd test")
+log.SymAddFile(symId, "fred.c")
+log.SymAddLine(symId, 130)
+log.SymAddKeyTypeList(symId, {"jobid", uint32})
+symId, error := log.SymCommit(symId)
+
+lsn, error := log.NewRecord()
+log.RecordAddSym(lsn, symId)
+log.RecordAddTimestamp(lsn, now)
+log.RecordAddValueList(lsn, {55})
+log.RecordCommit(lsn)
+
+log.Close()
+
+Print first 2 log messages
+------------
+log, error := OpenLog("printprovider")
+lsn, error := log.RecordFindFirst()
+loop for 2
+    symId, error := log.RecordSymId(lsn)
+    msg, error := log.SymMessage(symId)
+    print msg
+    lsn++
+endloop
+
+Q: what value types are supported for key/value pairs
+int32
+uint32
+int64
+uint64
+double
+bytedata - 32bit-len, bytes
+nulltermstring - bytes until null-char

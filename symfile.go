@@ -2,8 +2,8 @@ package logsym
 
 // Symfile is about creating and accessing a sym file.
 // A symfile is a file of static information for a log.
-// It does not vary over time but is constant to the source code file.
-// It needs to be looked up frequently as the same bit of code is repeatedly executed.
+// It does not vary over time but is constant based on the source code file.
+// The Sym data needs to be looked up frequently as the same bit of source code is repeatedly executed.
 
 import (
 	"bufio"
@@ -27,13 +27,17 @@ type LogLevel uint8
 
 // Value types supported in log
 const (
-	TypeInt32 LogValueType = iota
+	TypeUint8 LogValueType = iota
+	TypeInt8
+	TypeInt32
 	TypeUint32
 	TypeInt64
 	TypeUint64
-	TypeDouble
-	TypeByteData
+	TypeFloat32
+	TypeFloat64
+	TypeBoolean
 	TypeString
+	TypeByteData
 )
 
 const (
@@ -130,16 +134,24 @@ func (keyType KeyType) String() string {
 
 func (valueType LogValueType) String() string {
 	switch valueType {
+	case TypeBoolean:
+		return "Boolean"
+	case TypeInt8:
+		return "Int8"
 	case TypeInt32:
 		return "Int32"
 	case TypeInt64:
 		return "Int64"
+	case TypeUint8:
+		return "Uint8"
 	case TypeUint32:
 		return "Uint32"
 	case TypeUint64:
 		return "Uint64"
-	case TypeDouble:
-		return "Double"
+	case TypeFloat32:
+		return "Float32"
+	case TypeFloat64:
+		return "Float64"
 	case TypeString:
 		return "String"
 	case TypeByteData:
