@@ -36,9 +36,50 @@ func (entry *LogEntry) SizeBytes() uint32 {
 	return 8 + 8 + 8 + 4 + sizeOfValues(entry.valueList)
 }
 
+func nativeToTypeList(valueList []interface{}) []LogValueType {
+	t := TypeByteData
+	typeList := make([]LogValueType, len(valueList))
+	for _, val := range valueList {
+		switch v := val.(type) {
+		case uint8:
+			t = TypeUint8
+		case int8:
+			t = TypeInt8
+		case uint32:
+			t = TypeUint32
+		case int32:
+			t = TypeInt32
+		case uint64:
+			t = TypeUint64
+		case int64:
+			t = TypeInt64
+		case bool:
+			t = TypeBoolean
+		case string:
+			t = TypeString
+		}
+		typeList = append(typeList, t)
+	}
+	return typeList
+}
+
 func sizeOfValues(valueList []interface{}) uint32 {
 	// map native go types to log types
-
+	var totalLen, lenBytes uint32
+	for _, val := range valueList {
+		switch v := val.(type) {
+		case uint8, int8, bool:
+			lenBytes = 1
+		case uint32, int32:
+			lenBytes = 4
+		case uint64, int64:
+			lenBytes = 4
+		case string:
+			lenBytes = uint32(len(v))
+		}
+		totalLen += lenBytes
+	}
+	return totalLen
 }
 
 /*
