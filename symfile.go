@@ -40,6 +40,7 @@ const (
 	TypeByteData
 )
 
+// Levels for debugging
 const (
 	LevelDebug LogLevel = iota
 	LevelInfo

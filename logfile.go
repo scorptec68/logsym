@@ -1,6 +1,8 @@
 package logsym
 
 import (
+	"encoding/binary"
+	"io"
 	"os"
 	"time"
 )
@@ -31,16 +33,11 @@ type LogEntry struct {
 	// or as the data types used on disk - log types
 }
 
-// SizeBytes returns # of bytes of the entry on disk
-func (entry *LogEntry) SizeBytes() uint32 {
-	return 8 + 8 + 8 + 4 + sizeOfValues(entry.valueList)
-}
-
 func nativeToTypeList(valueList []interface{}) []LogValueType {
 	t := TypeByteData
 	typeList := make([]LogValueType, len(valueList))
 	for _, val := range valueList {
-		switch v := val.(type) {
+		switch val.(type) {
 		case uint8:
 			t = TypeUint8
 		case int8:
@@ -63,8 +60,9 @@ func nativeToTypeList(valueList []interface{}) []LogValueType {
 	return typeList
 }
 
+// Calculate number of bytes for all the different values in the list
+// This size is for ondisk
 func sizeOfValues(valueList []interface{}) uint32 {
-	// map native go types to log types
 	var totalLen, lenBytes uint32
 	for _, val := range valueList {
 		switch v := val.(type) {
@@ -73,25 +71,16 @@ func sizeOfValues(valueList []interface{}) uint32 {
 		case uint32, int32:
 			lenBytes = 4
 		case uint64, int64:
-			lenBytes = 4
+			lenBytes = 8
 		case string:
-			lenBytes = uint32(len(v))
+			lenBytes = 4 // length prefix
+			lenBytes += uint32(len(v))
 		}
 		totalLen += lenBytes
 	}
 	return totalLen
 }
 
-/*
- * [160 bit SHA-1 hash - too big]
- * 64 bit LSN
- * 64 bit sym Id
- * 64 bit timestamp
- * 32 bit length of value data
- * ...value data...
- * <types stored in the sym file>
- * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
- */
 func wow() {
 	t := time.Now()
 	t.UnixNano()
@@ -122,8 +111,10 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) (LSN, error) {
 		// then we would go over the end of the log file
 		// so start overwriting the beginning of the file
 		log.headOffset = 0
+		log.wrapNum++
+		log.file.Seek(0, 0)
 	}
-	len, err := entry.Write(log.file, log.headOffset)
+	_, err := entry.Write(log.file)
 	if err != nil {
 		return 0, err
 	}
@@ -133,4 +124,105 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) (LSN, error) {
 
 	//fmt.Printf("log.nextLogID: %v\n", log.nextLogID)
 	return log.nextLogID, nil
+}
+
+// SizeBytes returns # of bytes of the entry on disk
+func (entry *LogEntry) SizeBytes() uint32 {
+	// sizes of fields on disk
+	// 64 bit LSN
+	// 64 bit sym Id
+	// 64 bit timestamp
+	// 32 bit length of value data
+	// value-data
+	return 8 + 8 + 8 + 4 + sizeOfValues(entry.valueList)
+}
+
+/*
+ * 64 bit LSN
+ * 64 bit sym Id
+ * 64 bit timestamp
+ * 32 bit length of value data
+ * ...value data...
+ * <types stored in the sym file>
+ * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
+ */
+func (entry LogEntry) Write(w io.Writer) (length int, err error) {
+	byteOrder := binary.LittleEndian
+
+	// logID LSN
+	length += binary.Size(entry.logID)
+	err = binary.Write(w, byteOrder, entry.logID)
+	if err != nil {
+		return 0, err
+	}
+	//fmt.Printf("logId: %v\n", entry.logID)
+
+	// symID
+	length += binary.Size(entry.symbolID)
+	err = binary.Write(w, byteOrder, entry.symbolID)
+	if err != nil {
+		return 0, err
+	}
+	//fmt.Printf("symId: %v\n", entry.symbolID)
+
+	// timestamp
+	length += binary.Size(entry.timeStamp)
+	err = binary.Write(w, byteOrder, entry.timeStamp)
+	if err != nil {
+		return 0, err
+	}
+	//fmt.Printf("timestamp: %v\n", entry.timeStamp)
+
+	// length of value data
+	length += 4
+	valLen := sizeOfValues(entry.valueList)
+	err = binary.Write(w, byteOrder, valLen)
+	if err != nil {
+		return 0, err
+	}
+	//fmt.Printf("value len: %v\n", valLen)
+
+	// value data
+	// Note: no type info is stored in the data log
+	// Type info is kept in the sym file
+	length += int(valLen)
+	err = writeValueList(w, byteOrder, entry.valueList)
+	if err != nil {
+		return 0, err
+	}
+
+	return length, nil
+}
+
+func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interface{}) (err error) {
+	for _, value := range valueList {
+
+		switch value.(type) {
+		case uint8, int8, bool, uint32, int32, uint64, int64:
+			// fixed size
+			err = binary.Write(w, byteOrder, value)
+			if err != nil {
+				return err
+			}
+		case string:
+			// length prefix
+			var l uint32
+			str := value.(string)
+			l = uint32(len(str))
+			err = binary.Write(w, byteOrder, l)
+			if err != nil {
+				return err
+			}
+
+			// string data
+			// ? str to byte array?
+			// msgBytes := []byte(entry.message)
+			err = binary.Write(w, byteOrder, l)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
