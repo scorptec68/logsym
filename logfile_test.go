@@ -2,89 +2,108 @@ package logsym
 
 import (
 	"fmt"
-	"strconv"
 	"testing"
 )
 
-// Test the symfile module
+// Test the log data file module
 
-func createAddEntries(sym *SymFile, numEntries int) error {
-	keyTypes := make([]KeyType, 3)
-	keyTypes[0].key = "jobid"
-	keyTypes[0].valueType = TypeUint32
-	keyTypes[1].key = "printerid"
-	keyTypes[1].valueType = TypeString
-	keyTypes[2].key = "lang"
-	keyTypes[2].valueType = TypeString
+func createValueList(i int) (valueList []interface{}) {
+	// variables
+	var b bool
+	var x32 uint32
+	var x64 uint64
+	var f32 float32
+	var f64 float64
+	var s string
 
+	b = true
+	x32 = 42 + uint32(i)
+	x64 = 43 + uint64(i)
+	f32 = 3.1415 + float32(i)
+	f64 = 0.623712 + float64(i)
+	s = fmt.Sprint("hi there %d", i)
+
+	valueList = append(valueList, b)
+	valueList = append(valueList, x32)
+	valueList = append(valueList, x64)
+	valueList = append(valueList, f32)
+	valueList = append(valueList, f64)
+	valueList = append(valueList, s)
+	return valueList
+}
+
+func createAddEntries(log *LogFile, numEntries int) error {
 	for i := 0; i < numEntries; i++ {
-		iStr := strconv.Itoa(i)
-		entry := CreateSymbolEntry("test message "+iStr, "testfile"+iStr, uint32(42+i), keyTypes)
-		_, err := sym.SymFileAddEntry(entry)
+		valueList := createValueList(i)
+		entry := CreateLogEntry(SymID(i), valueList)
+		_, err := log.LogFileAddEntry(entry)
 		if err != nil {
-			return fmt.Errorf("Sym add error: %v", err)
+			return fmt.Errorf("Log file add error: %v", err)
 		}
 	}
 	return nil
 }
 
-func createSym(fname string) (*SymFile, error) {
-	sym, err := SymFileCreate(fname)
+func createLog(fname string) (*LogFile, error) {
+	logSize := 32 * 1024
+	log, err := LogFileCreate(fname, logSize)
 	if err != nil {
-		fmt.Printf("Sym create error: %v", err)
+		fmt.Printf("Log file create error: %v", err)
 		return nil, err
 	}
-	err = createAddEntries(sym, 5)
+	err = createAddEntries(log, 5)
 	if err != nil {
-		fmt.Printf("Sym add entries error: %v", err)
+		fmt.Printf("Log add entries error: %v", err)
 		return nil, err
 	}
 
-	return sym, nil
+	return log, nil
 }
 
-func TestSymFile(t *testing.T) {
-	sym1, err := createSym("testfile")
+func TestLogFile(t *testing.T) {
+	log, err := createLog("testfile")
 	if err != nil {
-		t.Errorf("Failed to create sym: %v", err)
+		t.Errorf("Failed to create log: %v", err)
 		return
 	}
-	sym1.SymFileClose()
+	log.LogFileClose()
 
-	sym2, err := SymFileOpenAppend("testfile")
+	log, err := LogFileOpenRead("testfile")
 	if err != nil {
-		t.Errorf("Sym open error: %v", err)
+		t.Errorf("Log open error: %v", err)
 		return
 	}
 
-	if sym1.String() != sym2.String() {
-		t.Errorf("Symbol written and read in mismatch")
-		t.Errorf("Wrote: %v but read in %v", sym1, sym2)
+	// Compare all the log data entries 1 at a time
+	// TODO
+	if entry.getValues() != expectedValues {
+		t.Errorf("Log data written and read in mismatch")
+		t.Errorf("Wrote values: %v but read in %v", entry.getValues(), expectedValues)
 		return
 	}
 
-	sym2.SymFileClose()
+	log.LogFileClose()
 }
 
-func ExampleSymFile() {
+func ExampleLogFile() {
 
-	sym, err := createSym("testfile")
+	log, err := createLog("testfile")
 	if err != nil {
-		fmt.Printf("Sym create error: %v", err)
+		fmt.Printf("Log create error: %v", err)
 		return
 	}
-	err = createAddEntries(sym, 3)
+	err = createAddEntries(log, 3)
 	if err != nil {
 		fmt.Printf("Add entries error: %v", err)
 		return
 	}
-	err = createAddEntries(sym, 1)
+	err = createAddEntries(log, 1)
 	if err != nil {
 		fmt.Printf("Add entries error: %v", err)
 		return
 	}
-	sym.SymFileClose()
-	fmt.Printf("%v", sym)
+	log.LogFileClose()
+	fmt.Printf("%v", log)
 
 	// Output:
 	// SymFile

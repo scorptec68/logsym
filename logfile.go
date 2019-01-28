@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"time"
+	"unsafe"
 )
 
 // logfile is concerned with the internally rotated changing log data.
@@ -25,14 +26,21 @@ type LSN uint64
 
 // The LogEntry entry or record to write to represent a log message
 type LogEntry struct {
-	logID     LSN
-	symbolID  SymID
-	timeStamp uint64
+	logID     LSN    // privately set
+	symbolID  SymID  // pointer to the symbol table information
+	timeStamp uint64 // time when it is logged
 	valueList []interface{}
-	// Hmmm... valueList can be of the type as used in the api - native go types
-	// or as the data types used on disk - log types
 }
 
+// CreateLogEntry creates a new log entry in memory
+func CreateLogEntry(symbolID SymID, valueList []interface{}) (entry LogEntry) {
+	entry.symbolID = symbolID
+	entry.valueList = valueList
+	entry.timeStamp = uint64(time.Now().UnixNano())
+	return entry
+}
+
+// Go-type into log data ondisk-type
 func nativeToTypeList(valueList []interface{}) []LogValueType {
 	t := TypeByteData
 	typeList := make([]LogValueType, len(valueList))
@@ -54,6 +62,10 @@ func nativeToTypeList(valueList []interface{}) []LogValueType {
 			t = TypeBoolean
 		case string:
 			t = TypeString
+		case float32:
+			t = TypeFloat32
+		case float64:
+			t = TypeFloat64
 		}
 		typeList = append(typeList, t)
 	}
@@ -68,9 +80,9 @@ func sizeOfValues(valueList []interface{}) uint32 {
 		switch v := val.(type) {
 		case uint8, int8, bool:
 			lenBytes = 1
-		case uint32, int32:
+		case uint32, int32, float32:
 			lenBytes = 4
-		case uint64, int64:
+		case uint64, int64, float64:
 			lenBytes = 8
 		case string:
 			lenBytes = 4 // length prefix
@@ -92,28 +104,33 @@ func logFileName(baseFileName string) string {
 }
 
 // LogFileCreate creates a new log data file and allocates the LogFile data
-func LogFileCreate(baseFileName string, maxFileSizeBytes uint64) (log *LogFile, err error) {
+func LogFileCreate(baseFileName string, maxFileSizeBytes int) (log *LogFile, err error) {
 	f, err := os.Create(logFileName(baseFileName))
 	if err != nil {
 		return nil, err
 	}
 	log = &LogFile{
 		file:         f,
-		maxSizeBytes: maxFileSizeBytes,
+		maxSizeBytes: uint64(maxFileSizeBytes),
 	}
 	return log, nil
 }
 
 // LogFileAddEntry adds an entry to log data file
+// This means writing to the file and possibly wrapping around and starting
+// from the beginning of the file.
 func (log *LogFile) LogFileAddEntry(entry LogEntry) (LSN, error) {
-	entry.logID = log.nextLogID
+
+	// Wrap case
+	// then we would go over the end of the log file
+	// so start overwriting the beginning of the file
 	if log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
-		// then we would go over the end of the log file
-		// so start overwriting the beginning of the file
 		log.headOffset = 0
 		log.wrapNum++
 		log.file.Seek(0, 0)
 	}
+
+	entry.logID = log.nextLogID
 	_, err := entry.Write(log.file)
 	if err != nil {
 		return 0, err
@@ -128,13 +145,18 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) (LSN, error) {
 
 // SizeBytes returns # of bytes of the entry on disk
 func (entry *LogEntry) SizeBytes() uint32 {
+	var len uint32
 	// sizes of fields on disk
-	// 64 bit LSN
-	// 64 bit sym Id
-	// 64 bit timestamp
-	// 32 bit length of value data
+	// 8 - 64 bit LSN
+	// 8 - 64 bit sym Id
+	// 8 - 64 bit timestamp
+	// 4 - 32 bit length of value data
 	// value-data
-	return 8 + 8 + 8 + 4 + sizeOfValues(entry.valueList)
+	headerLen := unsafe.Sizeof(entry.logID) +
+		unsafe.Sizeof(entry.symbolID) +
+		unsafe.Sizeof(entry.timeStamp) +
+		unsafe.Sizeof(len)
+	return uint32(headerLen) + sizeOfValues(entry.valueList)
 }
 
 /*
@@ -216,8 +238,8 @@ func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interfa
 
 			// string data
 			// ? str to byte array?
-			// msgBytes := []byte(entry.message)
-			err = binary.Write(w, byteOrder, l)
+			// msgBytes := []byte(str)
+			err = binary.Write(w, byteOrder, str)
 			if err != nil {
 				return err
 			}
