@@ -61,6 +61,8 @@ func createLog(fname string) (*LogFile, error) {
 }
 
 func TestLogFile(t *testing.T) {
+
+	// prime up a log file with some entries in it
 	log, err := createLog("testfile")
 	if err != nil {
 		t.Errorf("Failed to create log: %v", err)
@@ -68,18 +70,32 @@ func TestLogFile(t *testing.T) {
 	}
 	log.LogFileClose()
 
-	log, err := LogFileOpenRead("testfile")
+	// open log for reading
+	log, err = LogFileOpenRead("testfile")
 	if err != nil {
 		t.Errorf("Log open error: %v", err)
 		return
 	}
 
-	// Compare all the log data entries 1 at a time
-	// TODO
-	if entry.getValues() != expectedValues {
-		t.Errorf("Log data written and read in mismatch")
-		t.Errorf("Wrote values: %v but read in %v", entry.getValues(), expectedValues)
-		return
+	// read each entry and compare with what we expect should be there
+	for i := 0; ; i++ {
+		entry, eof, err := log.ReadEntry()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if eof {
+			break
+		}
+		expectedValues := createValueList(i)
+		for j, value := range entry.GetValues() {
+			if value != expectedValues[j] {
+				t.Errorf("Log data written and read in mismatch")
+				t.Errorf("Wrote values: %v but read in %v", value, expectedValues[i])
+				return
+
+			}
+		}
 	}
 
 	log.LogFileClose()
