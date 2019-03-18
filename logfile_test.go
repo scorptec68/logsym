@@ -36,7 +36,7 @@ func createAddEntries(log *LogFile, numEntries int) error {
 	for i := 0; i < numEntries; i++ {
 		valueList := createValueList(i)
 		entry := CreateLogEntry(SymID(i), valueList)
-		_, err := log.LogFileAddEntry(entry)
+		err := log.LogFileAddEntry(entry)
 		if err != nil {
 			return fmt.Errorf("Log file add error: %v", err)
 		}

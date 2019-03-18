@@ -11,6 +11,11 @@ import (
 // logfile is concerned with the internally rotated changing log data.
 // The logfile has an uppersize limit which it will not write more than one
 // log record over before starting at the beginning of the file.
+//
+// Assumptions:
+// Writing and reading will not be interleaved.
+// The writing will occur first.
+// The reading will start on a file which has finished writing.
 
 // The LogFile object matching the xxxx.log on-disk file and used to hold the log recrods.
 type LogFile struct {
@@ -23,8 +28,11 @@ type LogFile struct {
 	byteOrder    binary.ByteOrder
 }
 
-// LSN is the log sequence number - the monoitically increasing next number for a log record
-type LSN uint64
+// LSN is the log sequence number - the monotonically increasing next number for a log record
+type LSN struct {
+	cycle uint64 // number of cycles or wraps of log
+	pos   uint64 // position within the log file - nth entry
+}
 
 // The LogEntry entry or record to write to represent a log message
 type LogEntry struct {
@@ -34,9 +42,12 @@ type LogEntry struct {
 	valueList []interface{}
 }
 
+// Data in the metadata file file.meta
 type metaData struct {
-	headOffset   uint64
-	maxSizeBytes uint64
+	headOffset   uint64 // byte offset to where the next log entry should go
+	tailOffset   uint64 // byte offset to start of the the oldest log entry
+	maxSizeBytes uint64 // maximum size in bytes of the data log
+	wrapNum      uint64 // wrap number or cycle number
 }
 
 // CreateLogEntry creates a new log entry in memory
@@ -136,27 +147,34 @@ func LogFileCreate(baseFileName string, maxFileSizeBytes int) (log *LogFile, err
 }
 
 // LogFileOpenRead opens a log file for reading and allocates the LogFile data
-// It needs to position the log at the head of the tail of the log file.
-// So subsequent reads can travers from the tail to the head.
+// It needs to position the log at tail of the log file.
+// So subsequent reads can traverse from the tail to the head.
 func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
+	log = new(LogFile)
+
 	// Open for reading from the start of the file
-	f, err := os.Open(logFileName(baseFileName))
+	log.entryFile, err = os.Open(logFileName(baseFileName))
 	if err != nil {
 		return nil, err
 	}
 
-	// We now need to find the tail of the log because that is our real start
-	// start -> end
-	// tail -> head
-	//
-	// head pointer in a header or work out by binary search for change in cycle#s.
-	// Good to have a header anyway, but probably can just periodically update it
-	// and confirm with a transition nearby - then don't need binary search
-	// Also can update when log is finished being written to as we then want to be
-	// quick from then onwards (more like forever in read-only mode).
-	// Could have a file.sym file.log file.met
-	//magic#
-	//header-offset
+	log.metaFile, err = os.Open(metaFileName(baseFileName))
+	if err != nil {
+		log.entryFile.Close()
+		return nil, err
+	}
+
+	metaData, err := log.readMetaData()
+	if err != nil {
+		log.entryFile.Close()
+		log.metaFile.Close()
+		return nil, err
+	}
+
+	// position us at the start of the entry data file
+	_, err = log.entryFile.Seek(int64(metaData.tailOffset), 0)
+
+	return log, err
 }
 
 // LogFileClose closes the associate files
@@ -182,7 +200,18 @@ func (log *LogFile) writeMetaData(data metaData) error {
 	return binary.Write(log.metaFile, log.byteOrder, data)
 }
 
+// Read metadata from the meta file
+func (log *LogFile) readMetaData() (data *metaData, err error) {
+	_, err = log.metaFile.Seek(0, 0)
+	if err != nil {
+		return nil, err
+	}
+	err = binary.Read(log.metaFile, log.byteOrder, data)
+	return data, err
+}
+
 // updateHead updates the meta file with the head pointer
+// and other relevant log parameters
 func (log *LogFile) updateHead() error {
 	// where are we in the log data file?
 	offset, err := log.entryFile.Seek(0, 1)
@@ -190,16 +219,29 @@ func (log *LogFile) updateHead() error {
 		return err
 	}
 
+	// point to offset in the data file where the next log entry is due to go
+	// it is not written there yet but will be there when we next write it
 	log.headOffset = uint64(offset)
 
-	data := metaData{headOffset: log.headOffset, maxSizeBytes: log.maxSizeBytes}
+	data := metaData{headOffset: log.headOffset, maxSizeBytes: log.maxSizeBytes, wrapNum: log.wrapNum}
 	return log.writeMetaData(data)
+}
+
+// inc increments the position of the LSN
+func (lsn *LSN) inc() {
+	lsn.pos++
+}
+
+// wrap wraps the LSN and resets position
+func (lsn *LSN) wrap() {
+	lsn.pos = 0
+	lsn.cycle++
 }
 
 // LogFileAddEntry adds an entry to log data file
 // This means writing to the file and possibly wrapping around and starting
 // from the beginning of the file.
-func (log *LogFile) LogFileAddEntry(entry LogEntry) (LSN, error) {
+func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
 
 	// Wrap case
 	// then we would go over the end of the log file
@@ -208,35 +250,36 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) (LSN, error) {
 		log.headOffset = 0
 		log.wrapNum++
 		log.entryFile.Seek(0, 0)
+		log.nextLogID.wrap()
 	}
 
 	entry.logID = log.nextLogID
 
 	// write our data to the file
-	_, err = entry.Write(log.entryFile, log.byteOrder)
+	_, err := entry.Write(log.entryFile, log.byteOrder)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	//fmt.Printf("len of write entry: %v\n", len)
 
 	// update meta file - head points to next spot to write to
 	// unless it is time to wrap to the start again
-	err := log.updateHead()
+	err = log.updateHead()
 	if err != nil {
-		return 0, err
+		return err
 	}
 
-	log.nextLogID++
+	log.nextLogID.inc()
 
 	//fmt.Printf("log.nextLogID: %v\n", log.nextLogID)
-	return log.nextLogID, nil
+	return nil
 }
 
 // SizeBytes returns # of bytes of the entry on disk
 func (entry *LogEntry) SizeBytes() uint32 {
 	var len uint32
 	// sizes of fields on disk
-	// 8 - 64 bit LSN
+	// 16 - 128 bit LSN
 	// 8 - 64 bit sym Id
 	// 8 - 64 bit timestamp
 	// 4 - 32 bit length of value data
@@ -249,14 +292,25 @@ func (entry *LogEntry) SizeBytes() uint32 {
 }
 
 // ReadEntry reads a log entry from the current position in the log file.
-// Returns if there is an error, end of file or the entry.
+// Returns if there is an error, eof or the entry.
+// Note: The eof will actually occur when we reach the head of the list and
+// not at the end of the real file.
+/*
+ * 128 bit LSN
+ * 64 bit sym Id
+ * 64 bit timestamp
+ * 32 bit length of value data
+ * ...value data...
+ * <types stored in the sym file>
+ * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
+ */
 func (log *LogFile) ReadEntry() (entry LogEntry, eof bool, err error) {
 	// TODO
 	return entry, eof, err
 }
 
 /*
- * 64 bit LSN
+ * 128 bit LSN
  * 64 bit sym Id
  * 64 bit timestamp
  * 32 bit length of value data
