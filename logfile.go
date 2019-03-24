@@ -19,27 +19,27 @@ import (
 
 // The LogFile object matching the xxxx.log on-disk file and used to hold the log recrods.
 type LogFile struct {
-	entryFile    *os.File // file pointer to the entry data
-	metaFile     *os.File // meta file for header type info e.g. head pointer
-	nextLogID    LSN      // current log sequence number that we are at
-	headOffset   uint64   // offset into file where next record goes
-	wrapNum      uint64   // how many times wrapped
-	maxSizeBytes uint64   // maximum size in bytes that the log record can grow to
-	byteOrder    binary.ByteOrder
+	entryFile    *os.File         // file pointer to the entry data
+	metaFile     *os.File         // meta file for header type info e.g. head pointer
+	nextLogID    LSN              // current log sequence number that we are at
+	headOffset   uint64           // offset into file where next record goes
+	wrapNum      uint64           // how many times wrapped
+	maxSizeBytes uint64           // maximum size in bytes that the log record can grow to
+	byteOrder    binary.ByteOrder // the byte ordering of the numbers
 }
 
 // LSN is the log sequence number - the monotonically increasing next number for a log record
 type LSN struct {
 	cycle uint64 // number of cycles or wraps of log
-	pos   uint64 // position within the log file - nth entry
+	pos   uint64 // position within the log file - nth entry (not an offset)
 }
 
 // The LogEntry entry or record to write to represent a log message
 type LogEntry struct {
-	logID     LSN    // privately set
-	symbolID  SymID  // pointer to the symbol table information
-	timeStamp uint64 // time when it is logged
-	valueList []interface{}
+	logID     LSN           // privately set
+	symbolID  SymID         // pointer to the symbol table information
+	timeStamp uint64        // time when it is logged
+	valueList []interface{} // list of values for the entry in memory
 }
 
 // Data in the metadata file file.meta
@@ -63,7 +63,7 @@ func (entry LogEntry) GetValues() []interface{} {
 	return entry.valueList
 }
 
-// Go-type into log data ondisk-type
+// Value list with Go-types into log data ondisk-type list
 func nativeToTypeList(valueList []interface{}) []LogValueType {
 	t := TypeByteData
 	typeList := make([]LogValueType, len(valueList))
@@ -121,28 +121,35 @@ func logFileName(baseFileName string) string {
 	return baseFileName + ".log"
 }
 
+// The file name of the log meta file
 func metaFileName(baseFileName string) string {
 	return baseFileName + ".met"
 }
 
-// LogFileCreate creates a new log data file and allocates the LogFile data
+// LogFileCreate creates a new log data & meta file and allocates the LogFile struct
 func LogFileCreate(baseFileName string, maxFileSizeBytes int) (log *LogFile, err error) {
+
+	// create log data file in os
 	entryFile, err := os.Create(logFileName(baseFileName))
 	if err != nil {
 		return nil, err
 	}
+
+	// create log meta file in os
 	metaFile, err := os.Create(metaFileName(baseFileName))
 	if err != nil {
 		entryFile.Close()
 		return nil, err
 	}
 
+	// create the log file structure in memory
 	log = &LogFile{
 		byteOrder:    binary.LittleEndian,
 		entryFile:    entryFile,
 		metaFile:     metaFile,
 		maxSizeBytes: uint64(maxFileSizeBytes),
 	}
+
 	return log, nil
 }
 
@@ -158,12 +165,11 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 		return nil, err
 	}
 
+	// Open & read in the meta file
 	log.metaFile, err = os.Open(metaFileName(baseFileName))
 	if err != nil {
 		log.entryFile.Close()
 		return nil, err
-	}
-
 	metaData, err := log.readMetaData()
 	if err != nil {
 		log.entryFile.Close()
@@ -172,6 +178,7 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	}
 
 	// position us at the start of the entry data file
+	// seek to tail - want to read from tail to head
 	_, err = log.entryFile.Seek(int64(metaData.tailOffset), 0)
 
 	return log, err
@@ -241,6 +248,8 @@ func (lsn *LSN) wrap() {
 // LogFileAddEntry adds an entry to log data file
 // This means writing to the file and possibly wrapping around and starting
 // from the beginning of the file.
+// Note: if an entry would wrap then don't do a partial write but instead start
+// from the beginning of the file with the new entry.
 func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
 
 	// Wrap case
@@ -305,7 +314,54 @@ func (entry *LogEntry) SizeBytes() uint32 {
  * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
  */
 func (log *LogFile) ReadEntry() (entry LogEntry, eof bool, err error) {
-	// TODO
+	eof = false
+	err = nil
+	r := bufio.NewReader(log.entryFile)
+
+	// logID LSN
+	err = binary.Read(r, log.byteOrder, &entry.logID)
+	if err != nil {
+		return entry, eof, err
+	}
+	//fmt.Printf("read logId: %v\n", entry.logID)
+
+	// symID
+	err = binary.Read(r, log.byteOrder, &entry.symbolID)
+	if err != nil {
+		return entry, eof, err
+	}
+	//fmt.Printf("symId: %v\n", entry.symbolID)
+	
+	// TODO: need to get typeList from the symbol file using the symbol-id
+	keyTypeList, err = getKeyTypeListFromSymFile(entry.symbolID)
+	if err != nil {
+		return entry, eof, err
+	}
+
+	// timestamp
+	err = binary.Read(r, log.byteOrder, &entry.timeStamp)
+	if err != nil {
+		return entry, eof, err
+	}
+	//fmt.Printf("timestamp: %v\n", entry.timeStamp)
+
+	// length of value data
+	var valLen uint32
+	err = binary.Read(r, log.byteOrder, &valLen)
+	if err != nil {
+		return entry, eof, err
+	}
+
+	if valLen != len(keyTypeList) {
+		return entry, eof, fmt.Errorf("Read value list length mismatch with length of symbol type list")
+	}
+
+	// valuelist
+	entry.valueList = readValueList(r, log.byteOrder, keyTypeList)
+	if err != nil {
+		return 0, err
+	}
+
 	return entry, eof, err
 }
 
@@ -365,6 +421,9 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	return length, nil
 }
 
+// Write all values from valueList to the writer.
+// Basic/atomic types are written straight out
+// Strings are length prefix encoded
 func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interface{}) (err error) {
 	for _, value := range valueList {
 
@@ -386,9 +445,7 @@ func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interfa
 			}
 
 			// string data
-			// ? str to byte array?
-			// msgBytes := []byte(str)
-			err = binary.Write(w, byteOrder, str)
+			n, err = w.Write(w, str)
 			if err != nil {
 				return err
 			}
@@ -396,4 +453,98 @@ func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interfa
 	}
 
 	return nil
+}
+
+// Read in the value list using the list of types and return the value list
+func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyType) (valueList []interface{}, err error) {
+	valueList = make(interface{}, len(keyTypeList))
+	for i := 0; i < len(keyTypeList); i++ {
+		keyType := keyTypeList[i]
+		fmt.Printf("reading key value: %v\n", keyType.key)
+
+		switch(keyType.valueType) {
+		case TypeUint8:
+			var val uint8
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeInt8:
+			var val int8
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeInt32:
+			var val int32
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeUint32:
+			var val uint32
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeInt64:
+			var val int64
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeUint64:
+			var val uint64
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeFloat32:
+			var val float32
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeFloat64:
+			var val float64
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeBoolean:
+			var val boolean
+			err = binary.Read(r, byteOrder, &val)
+			if err != nil {
+				return nil, err
+			}
+			append(valueList, val)
+		case TypeString:
+			var lenStr uint32
+			err = binary.Read(r, byteOrder, &lenStr)
+			if err != nil {
+				return nil, err
+			}
+			b := make([]byte, lenStr)
+			got, err := r.Read(b)
+			append(valueList, string(b))
+		case TypeByteData:
+			var lenStr uint32
+			err = binary.Read(r, byteOrder, &lenStr)
+			if err != nil {
+				return nil, err
+			}
+			b := make([]byte, lenStr)
+			got, err := r.Read(b)
+			append(valueList, b)
+		}
+	}
+	return valueList, err
 }
