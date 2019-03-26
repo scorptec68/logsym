@@ -301,6 +301,10 @@ func (entry *LogEntry) SizeBytes() uint32 {
 }
 
 // ReadEntry reads a log entry from the current position in the log file.
+//
+// It needs the symFile to be read in first so that it can know the types associated
+// with a log line (we don't duplicate this information on every instance).
+//
 // Returns if there is an error, eof or the entry.
 // Note: The eof will actually occur when we reach the head of the list and
 // not at the end of the real file.
@@ -313,7 +317,7 @@ func (entry *LogEntry) SizeBytes() uint32 {
  * <types stored in the sym file>
  * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
  */
-func (log *LogFile) ReadEntry() (entry LogEntry, eof bool, err error) {
+func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, eof bool, err error) {
 	eof = false
 	err = nil
 	r := bufio.NewReader(log.entryFile)
@@ -332,8 +336,12 @@ func (log *LogFile) ReadEntry() (entry LogEntry, eof bool, err error) {
 	}
 	//fmt.Printf("symId: %v\n", entry.symbolID)
 	
-	// TODO: need to get typeList from the symbol file using the symbol-id
-	keyTypeList, err = getKeyTypeListFromSymFile(entry.symbolID)
+	// Get typeList from the symbol file
+	symEntry, ok := sym.SymFileGetEntry(entry.symbolID)
+	if !ok {
+		return nil, false, fmt.Errorf("Can't find symbol in Symbol file")
+	}
+	keyTypeList := symEntry.keyTypeList
 	if err != nil {
 		return entry, eof, err
 	}
