@@ -8,7 +8,7 @@ import (
 
 // Test the symfile module
 
-func createAddEntries(sym *SymFile, numEntries int) error {
+func createAddSymEntries(sym *SymFile, numEntries int) error {
 	keyTypes := make([]KeyType, 3)
 	keyTypes[0].key = "jobid"
 	keyTypes[0].valueType = TypeUint32
@@ -34,7 +34,7 @@ func createSym(fname string) (*SymFile, error) {
 		fmt.Printf("Sym create error: %v", err)
 		return nil, err
 	}
-	err = createAddEntries(sym, 5)
+	err = createAddSymEntries(sym, 5)
 	if err != nil {
 		fmt.Printf("Sym add entries error: %v", err)
 		return nil, err
@@ -73,12 +73,12 @@ func ExampleSymFile() {
 		fmt.Printf("Sym create error: %v", err)
 		return
 	}
-	err = createAddEntries(sym, 3)
+	err = createAddSymEntries(sym, 3)
 	if err != nil {
 		fmt.Printf("Add entries error: %v", err)
 		return
 	}
-	err = createAddEntries(sym, 1)
+	err = createAddSymEntries(sym, 1)
 	if err != nil {
 		fmt.Printf("Add entries error: %v", err)
 		return

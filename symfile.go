@@ -94,7 +94,7 @@ type SymbolEntry struct {
 // SymFile is the top level object for the .sym file
 type SymFile struct {
 	msg2Entries map[string]*SymbolEntry // use message+fname+line as key - seen entry before?
-	id2Entries  map[SymID]*SymbolEntry  // symbold id as key - get info about symbol such as typeList
+	id2Entries  map[SymID]*SymbolEntry  // symbold id as key - get info about incoming symbol such as typeList
 	file        *os.File                // file used for appending symbols to the end
 	nextSymID   SymID                   // the next id/offset for the next symbol to be added
 }
@@ -200,19 +200,19 @@ func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
 	sym = &SymFile{
 		file:        f,
 		msg2Entries: msg2Entries,
-		id2Entries: id2Entries,
+		id2Entries:  id2Entries,
 	}
 	return sym, nil
 }
 
 // symFileReadin reads a whole sym file into a map
-func symFileReadin(baseFileName string)
-			(msg2Entries map[string]*SymbolEntry, 
-			 id2Entries map[SymID]*SymbolEntry,
-			 err error) {
+func symFileReadin(baseFileName string) (msg2Entries map[string]*SymbolEntry,
+	id2Entries map[SymID]*SymbolEntry,
+	err error) {
+
 	f, err := os.Open(symFileName(baseFileName))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
 
@@ -225,10 +225,10 @@ func symFileReadin(baseFileName string)
 		var entry SymbolEntry
 		err = entry.Read(reader)
 		if err == io.EOF {
-			return entries, nil
+			return msg2Entries, id2Entries, nil
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		//fmt.Printf("entry: %v\n", entry)
 		msg2Entries[entry.keyString()] = &entry
@@ -238,7 +238,7 @@ func symFileReadin(baseFileName string)
 
 // SymFileOpenAppend opens up the symFile, read in the entries and get ready for appending to file
 func SymFileOpenAppend(baseFileName string) (sym *SymFile, err error) {
-	msg2entries, id2Entries, err := symFileReadin(baseFileName)
+	msg2Entries, id2Entries, err := symFileReadin(baseFileName)
 	if err != nil {
 		return nil, err
 	}
@@ -290,8 +290,9 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	return sym.nextSymID, nil
 }
 
-func (sym *SymFile) SymFileGetEntry(id SymID) (entry SymbolEntry, ok bool) {
-	return sym.id2Entries[id]
+func (sym *SymFile) SymFileGetEntry(id SymID) (entry *SymbolEntry, ok bool) {
+	entry, ok = sym.id2Entries[id]
+	return entry, ok
 }
 
 // Read the SymbolEntry using a reader

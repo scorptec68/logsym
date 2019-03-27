@@ -1,7 +1,9 @@
 package logsym
 
 import (
+	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -170,6 +172,7 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	if err != nil {
 		log.entryFile.Close()
 		return nil, err
+	}
 	metaData, err := log.readMetaData()
 	if err != nil {
 		log.entryFile.Close()
@@ -317,7 +320,7 @@ func (entry *LogEntry) SizeBytes() uint32 {
  * <types stored in the sym file>
  * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
  */
-func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, eof bool, err error) {
+func (log *LogFile) ReadEntry(sym *SymFile) (entry *LogEntry, eof bool, err error) {
 	eof = false
 	err = nil
 	r := bufio.NewReader(log.entryFile)
@@ -335,7 +338,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, eof bool, err error
 		return entry, eof, err
 	}
 	//fmt.Printf("symId: %v\n", entry.symbolID)
-	
+
 	// Get typeList from the symbol file
 	symEntry, ok := sym.SymFileGetEntry(entry.symbolID)
 	if !ok {
@@ -360,14 +363,14 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, eof bool, err error
 		return entry, eof, err
 	}
 
-	if valLen != len(keyTypeList) {
+	if valLen != uint32(len(keyTypeList)) {
 		return entry, eof, fmt.Errorf("Read value list length mismatch with length of symbol type list")
 	}
 
 	// valuelist
-	entry.valueList = readValueList(r, log.byteOrder, keyTypeList)
+	entry.valueList, err = readValueList(r, log.byteOrder, keyTypeList)
 	if err != nil {
-		return 0, err
+		return nil, eof, err
 	}
 
 	return entry, eof, err
@@ -453,7 +456,7 @@ func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interfa
 			}
 
 			// string data
-			n, err = w.Write(w, str)
+			_, err = w.Write([]byte(str))
 			if err != nil {
 				return err
 			}
@@ -465,75 +468,75 @@ func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interfa
 
 // Read in the value list using the list of types and return the value list
 func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyType) (valueList []interface{}, err error) {
-	valueList = make(interface{}, len(keyTypeList))
+	valueList = make([]interface{}, len(keyTypeList))
 	for i := 0; i < len(keyTypeList); i++ {
 		keyType := keyTypeList[i]
 		fmt.Printf("reading key value: %v\n", keyType.key)
 
-		switch(keyType.valueType) {
+		switch keyType.valueType {
 		case TypeUint8:
 			var val uint8
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeInt8:
 			var val int8
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeInt32:
 			var val int32
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeUint32:
 			var val uint32
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeInt64:
 			var val int64
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeUint64:
 			var val uint64
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeFloat32:
 			var val float32
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeFloat64:
 			var val float64
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeBoolean:
-			var val boolean
+			var val bool
 			err = binary.Read(r, byteOrder, &val)
 			if err != nil {
 				return nil, err
 			}
-			append(valueList, val)
+			valueList = append(valueList, val)
 		case TypeString:
 			var lenStr uint32
 			err = binary.Read(r, byteOrder, &lenStr)
@@ -542,7 +545,7 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 			}
 			b := make([]byte, lenStr)
 			got, err := r.Read(b)
-			append(valueList, string(b))
+			valueList = append(valueList, string(b))
 		case TypeByteData:
 			var lenStr uint32
 			err = binary.Read(r, byteOrder, &lenStr)
@@ -551,7 +554,7 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 			}
 			b := make([]byte, lenStr)
 			got, err := r.Read(b)
-			append(valueList, b)
+			valueList = append(valueList, b)
 		}
 	}
 	return valueList, err
