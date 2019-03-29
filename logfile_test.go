@@ -2,12 +2,27 @@ package logsym
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 )
 
 // Test the log data file module
 
-func createValueList(i int) (valueList []interface{}) {
+func createValueKeyList(i int) (valueList []interface{}, keyTypes []KeyType) {
+	keyTypes = make([]KeyType, 3)
+	keyTypes[0].key = "bool key"
+	keyTypes[0].valueType = TypeBoolean
+	keyTypes[1].key = "u32 key"
+	keyTypes[1].valueType = TypeUint32
+	keyTypes[2].key = "u64 key"
+	keyTypes[2].valueType = TypeUint64
+	keyTypes[3].key = "f32 key"
+	keyTypes[3].valueType = TypeFloat32
+	keyTypes[4].key = "f64 key"
+	keyTypes[4].valueType = TypeFloat64
+	keyTypes[5].key = "string key"
+	keyTypes[5].valueType = TypeString
+
 	// variables
 	var b bool
 	var x32 uint32
@@ -29,14 +44,23 @@ func createValueList(i int) (valueList []interface{}) {
 	valueList = append(valueList, f32)
 	valueList = append(valueList, f64)
 	valueList = append(valueList, s)
-	return valueList
+	return valueList, keyTypes
 }
 
-func createAddEntries(log *LogFile, numEntries int) error {
+func createAddEntries(log *LogFile, sym *SymFile, numEntries int) error {
+
 	for i := 0; i < numEntries; i++ {
-		valueList := createValueList(i)
-		entry := CreateLogEntry(SymID(i), valueList)
-		err := log.LogFileAddEntry(entry)
+		valueList, keyTypes := createValueKeyList(i)
+
+		iStr := strconv.Itoa(i)
+		symEntry := CreateSymbolEntry("test message "+iStr, "testfile"+iStr, uint32(42+i), keyTypes)
+		symID, err := sym.SymFileAddEntry(symEntry)
+		if err != nil {
+			return fmt.Errorf("Sym add error: %v", err)
+		}
+
+		logEntry := CreateLogEntry(symID, valueList)
+		err = log.LogFileAddEntry(logEntry)
 		if err != nil {
 			return fmt.Errorf("Log file add error: %v", err)
 		}
@@ -51,7 +75,14 @@ func createLog(fname string) (*LogFile, error) {
 		fmt.Printf("Log file create error: %v", err)
 		return nil, err
 	}
-	err = createAddEntries(log, 5)
+
+	sym, err := SymFileCreate(fname)
+	if err != nil {
+		fmt.Printf("Sym create error: %v", err)
+		return nil, err
+	}
+
+	err = createAddEntries(log, sym, 5)
 	if err != nil {
 		fmt.Printf("Log add entries error: %v", err)
 		return nil, err
@@ -77,9 +108,15 @@ func TestLogFile(t *testing.T) {
 		return
 	}
 
+	sym, err := createSym("testfile")
+	if err != nil {
+		t.Errorf("Failed to create sym: %v", err)
+		return
+	}
+
 	// read each entry and compare with what we expect should be there
 	for i := 0; ; i++ {
-		readEntry, eof, err := log.ReadEntry()
+		readEntry, eof, err := log.ReadEntry(sym)
 		if err != nil {
 			t.Error(err)
 			return
