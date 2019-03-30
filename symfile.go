@@ -236,6 +236,16 @@ func symFileReadin(baseFileName string) (msg2Entries map[string]*SymbolEntry,
 	}
 }
 
+// SymFileReadAll opens up the symFile, read in the entries and close
+func SymFileReadAll(baseFileName string) (sym *SymFile, err error) {
+	msg2Entries, id2Entries, err := symFileReadin(baseFileName)
+	if err != nil {
+		return nil, err
+	}
+
+	sym = &SymFile{msg2Entries: msg2Entries, id2Entries: id2Entries}
+}
+
 // SymFileOpenAppend opens up the symFile, read in the entries and get ready for appending to file
 func SymFileOpenAppend(baseFileName string) (sym *SymFile, err error) {
 	msg2Entries, id2Entries, err := symFileReadin(baseFileName)

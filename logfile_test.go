@@ -68,38 +68,41 @@ func createAddEntries(log *LogFile, sym *SymFile, numEntries int) error {
 	return nil
 }
 
-func createLog(fname string) (*LogFile, error) {
-	logSize := 32 * 1024
+func createLog(fname string, logSize int) (*LogFile, *SymFile, error) {
+
 	log, err := LogFileCreate(fname, logSize)
 	if err != nil {
 		fmt.Printf("Log file create error: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	sym, err := SymFileCreate(fname)
 	if err != nil {
 		fmt.Printf("Sym create error: %v", err)
-		return nil, err
+		log.LogFileClose()
+		return nil, nil, err
 	}
 
 	err = createAddEntries(log, sym, 5)
 	if err != nil {
 		fmt.Printf("Log add entries error: %v", err)
-		return nil, err
+		log.LogFileClose()
+		sym.SymFileClose()
+		return nil, nil, err
 	}
 
-	return log, nil
+	return log, sym, nil
 }
 
 func TestLogFile(t *testing.T) {
-
 	// prime up a log file with some entries in it
-	log, err := createLog("testfile")
+	log, sym, err := createLog("testfile", 32*1024)
 	if err != nil {
 		t.Errorf("Failed to create log: %v", err)
 		return
 	}
 	log.LogFileClose()
+	sym.SymFileClose()
 
 	// open log for reading
 	log, err = LogFileOpenRead("testfile")
@@ -107,10 +110,11 @@ func TestLogFile(t *testing.T) {
 		t.Errorf("Log open error: %v", err)
 		return
 	}
+	defer log.LogFileClose()
 
-	sym, err := createSym("testfile")
+	sym, err = SymFileReadAll("testfile")
 	if err != nil {
-		t.Errorf("Failed to create sym: %v", err)
+		t.Errorf("Failed to read in sym: %v", err)
 		return
 	}
 
@@ -124,7 +128,7 @@ func TestLogFile(t *testing.T) {
 		if eof {
 			break
 		}
-		expectedValues := createValueList(i)
+		expectedValues, expectedKeyTypes := createValueKeyList(i)
 		for j, readValue := range readEntry.GetValues() {
 			if readValue != expectedValues[j] {
 				t.Errorf("Log data written and read in mismatch")
@@ -135,22 +139,21 @@ func TestLogFile(t *testing.T) {
 		}
 	}
 
-	log.LogFileClose()
 }
 
 func ExampleLogFile() {
 
-	log, err := createLog("testfile")
+	log, sym, err := createLog("testfile", 32*1024)
 	if err != nil {
 		fmt.Printf("Log create error: %v", err)
 		return
 	}
-	err = createAddEntries(log, 3)
+	err = createAddEntries(log, sym, 3)
 	if err != nil {
 		fmt.Printf("Add entries error: %v", err)
 		return
 	}
-	err = createAddEntries(log, 1)
+	err = createAddEntries(log, sym, 1)
 	if err != nil {
 		fmt.Printf("Add entries error: %v", err)
 		return
