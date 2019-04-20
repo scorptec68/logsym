@@ -9,7 +9,7 @@ import (
 // Test the log data file module
 
 func createValueKeyList(i int) (valueList []interface{}, keyTypes []KeyType) {
-	keyTypes = make([]KeyType, 3)
+	keyTypes = make([]KeyType, 6)
 	keyTypes[0].key = "bool key"
 	keyTypes[0].valueType = TypeBoolean
 	keyTypes[1].key = "u32 key"
@@ -36,7 +36,7 @@ func createValueKeyList(i int) (valueList []interface{}, keyTypes []KeyType) {
 	x64 = 43 + uint64(i)
 	f32 = 3.1415 + float32(i)
 	f64 = 0.623712 + float64(i)
-	s = fmt.Sprint("hi there %d", i)
+	s = fmt.Sprintf("hi there %d", i)
 
 	valueList = append(valueList, b)
 	valueList = append(valueList, x32)
@@ -128,7 +128,7 @@ func TestLogFile(t *testing.T) {
 		if eof {
 			break
 		}
-		expectedValues, expectedKeyTypes := createValueKeyList(i)
+		expectedValues, _ := createValueKeyList(i)
 		for j, readValue := range readEntry.GetValues() {
 			if readValue != expectedValues[j] {
 				t.Errorf("Log data written and read in mismatch")

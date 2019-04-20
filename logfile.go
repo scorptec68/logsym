@@ -538,22 +538,28 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 			}
 			valueList = append(valueList, val)
 		case TypeString:
-			var lenStr uint32
-			err = binary.Read(r, byteOrder, &lenStr)
+			var lenHdr uint32
+			err = binary.Read(r, byteOrder, &lenHdr)
 			if err != nil {
 				return nil, err
 			}
-			b := make([]byte, lenStr)
+			b := make([]byte, lenHdr)
 			got, err := r.Read(b)
+			if err == nil && got < int(lenHdr) {
+				err = fmt.Errorf("Only read %d bytes of %d for string", got, lenHdr)
+			}
 			valueList = append(valueList, string(b))
 		case TypeByteData:
-			var lenStr uint32
-			err = binary.Read(r, byteOrder, &lenStr)
+			var lenHdr uint32
+			err = binary.Read(r, byteOrder, &lenHdr)
 			if err != nil {
 				return nil, err
 			}
-			b := make([]byte, lenStr)
+			b := make([]byte, lenHdr)
 			got, err := r.Read(b)
+			if err == nil && got < int(lenHdr) {
+				err = fmt.Errorf("Only read %d bytes of %d for byte data", got, lenHdr)
+			}
 			valueList = append(valueList, b)
 		}
 	}

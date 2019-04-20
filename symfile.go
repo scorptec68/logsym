@@ -244,6 +244,7 @@ func SymFileReadAll(baseFileName string) (sym *SymFile, err error) {
 	}
 
 	sym = &SymFile{msg2Entries: msg2Entries, id2Entries: id2Entries}
+	return sym, err
 }
 
 // SymFileOpenAppend opens up the symFile, read in the entries and get ready for appending to file
@@ -300,6 +301,7 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	return sym.nextSymID, nil
 }
 
+// SymFileGetEntry returns the entry given the id
 func (sym *SymFile) SymFileGetEntry(id SymID) (entry *SymbolEntry, ok bool) {
 	entry, ok = sym.id2Entries[id]
 	return entry, ok
