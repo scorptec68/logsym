@@ -53,7 +53,10 @@ func createAddEntries(log *LogFile, sym *SymFile, numEntries int) error {
 		valueList, keyTypes := createValueKeyList(i)
 
 		iStr := strconv.Itoa(i)
-		symEntry := CreateSymbolEntry("test message "+iStr, "testfile"+iStr, uint32(42+i), keyTypes)
+		msgStr := "test message " + iStr
+		fileStr := "testfile" + iStr
+		lineNum := uint32(42 + i)
+		symEntry := CreateSymbolEntry(msgStr, fileStr, lineNum, keyTypes)
 		symID, err := sym.SymFileAddEntry(symEntry)
 		if err != nil {
 			return fmt.Errorf("Sym add error: %v", err)

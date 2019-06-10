@@ -32,8 +32,8 @@ type LogFile struct {
 
 // LSN is the log sequence number - the monotonically increasing next number for a log record
 type LSN struct {
-	cycle uint64 // number of cycles or wraps of log
-	pos   uint64 // position within the log file - nth entry (not an offset)
+	Cycle uint64 // number of cycles or wraps of log
+	Pos   uint64 // position within the log file - nth entry (not an offset)
 }
 
 // The LogEntry entry or record to write to represent a log message
@@ -46,10 +46,10 @@ type LogEntry struct {
 
 // Data in the metadata file file.meta
 type metaData struct {
-	headOffset   uint64 // byte offset to where the next log entry should go
-	tailOffset   uint64 // byte offset to start of the the oldest log entry
-	maxSizeBytes uint64 // maximum size in bytes of the data log
-	wrapNum      uint64 // wrap number or cycle number
+	HeadOffset   uint64 // byte offset to where the next log entry should go
+	TailOffset   uint64 // byte offset to start of the the oldest log entry
+	MaxSizeBytes uint64 // maximum size in bytes of the data log
+	WrapNum      uint64 // wrap number or cycle number
 }
 
 // CreateLogEntry creates a new log entry in memory
@@ -160,6 +160,7 @@ func LogFileCreate(baseFileName string, maxFileSizeBytes int) (log *LogFile, err
 // So subsequent reads can traverse from the tail to the head.
 func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	log = new(LogFile)
+	log.byteOrder = binary.LittleEndian
 
 	// Open for reading from the start of the file
 	log.entryFile, err = os.Open(logFileName(baseFileName))
@@ -182,7 +183,7 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 
 	// position us at the start of the entry data file
 	// seek to tail - want to read from tail to head
-	_, err = log.entryFile.Seek(int64(metaData.tailOffset), 0)
+	_, err = log.entryFile.Seek(int64(metaData.TailOffset), 0)
 
 	return log, err
 }
@@ -211,12 +212,12 @@ func (log *LogFile) writeMetaData(data metaData) error {
 }
 
 // Read metadata from the meta file
-func (log *LogFile) readMetaData() (data *metaData, err error) {
+func (log *LogFile) readMetaData() (data metaData, err error) {
 	_, err = log.metaFile.Seek(0, 0)
 	if err != nil {
-		return nil, err
+		return data, err
 	}
-	err = binary.Read(log.metaFile, log.byteOrder, data)
+	err = binary.Read(log.metaFile, log.byteOrder, &data)
 	return data, err
 }
 
@@ -233,19 +234,19 @@ func (log *LogFile) updateHead() error {
 	// it is not written there yet but will be there when we next write it
 	log.headOffset = uint64(offset)
 
-	data := metaData{headOffset: log.headOffset, maxSizeBytes: log.maxSizeBytes, wrapNum: log.wrapNum}
+	data := metaData{HeadOffset: log.headOffset, MaxSizeBytes: log.maxSizeBytes, WrapNum: log.wrapNum}
 	return log.writeMetaData(data)
 }
 
 // inc increments the position of the LSN
 func (lsn *LSN) inc() {
-	lsn.pos++
+	lsn.Pos++
 }
 
 // wrap wraps the LSN and resets position
 func (lsn *LSN) wrap() {
-	lsn.pos = 0
-	lsn.cycle++
+	lsn.Pos = 0
+	lsn.Cycle++
 }
 
 // LogFileAddEntry adds an entry to log data file
@@ -320,7 +321,7 @@ func (entry *LogEntry) SizeBytes() uint32 {
  * <types stored in the sym file>
  * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
  */
-func (log *LogFile) ReadEntry(sym *SymFile) (entry *LogEntry, eof bool, err error) {
+func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, eof bool, err error) {
 	eof = false
 	err = nil
 	r := bufio.NewReader(log.entryFile)
@@ -342,7 +343,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry *LogEntry, eof bool, err erro
 	// Get typeList from the symbol file
 	symEntry, ok := sym.SymFileGetEntry(entry.symbolID)
 	if !ok {
-		return nil, false, fmt.Errorf("Can't find symbol in Symbol file")
+		return entry, false, fmt.Errorf("Can't find symbol in Symbol file")
 	}
 	keyTypeList := symEntry.keyTypeList
 	if err != nil {
@@ -370,7 +371,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry *LogEntry, eof bool, err erro
 	// valuelist
 	entry.valueList, err = readValueList(r, log.byteOrder, keyTypeList)
 	if err != nil {
-		return nil, eof, err
+		return entry, eof, err
 	}
 
 	return entry, eof, err
