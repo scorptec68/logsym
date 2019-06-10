@@ -309,7 +309,7 @@ func (entry *LogEntry) SizeBytes() uint32 {
 // It needs the symFile to be read in first so that it can know the types associated
 // with a log line (we don't duplicate this information on every instance).
 //
-// Returns if there is an error, eof or the entry.
+// Returns if there is an error or the entry.
 // Note: The eof will actually occur when we reach the head of the list and
 // not at the end of the real file.
 /*
@@ -321,39 +321,38 @@ func (entry *LogEntry) SizeBytes() uint32 {
  * <types stored in the sym file>
  * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
  */
-func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, eof bool, err error) {
-	eof = false
+func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	err = nil
 	r := bufio.NewReader(log.entryFile)
 
 	// logID LSN
 	err = binary.Read(r, log.byteOrder, &entry.logID)
 	if err != nil {
-		return entry, eof, err
+		return entry, err
 	}
 	//fmt.Printf("read logId: %v\n", entry.logID)
 
 	// symID
 	err = binary.Read(r, log.byteOrder, &entry.symbolID)
 	if err != nil {
-		return entry, eof, err
+		return entry, err
 	}
 	//fmt.Printf("symId: %v\n", entry.symbolID)
 
 	// Get typeList from the symbol file
 	symEntry, ok := sym.SymFileGetEntry(entry.symbolID)
 	if !ok {
-		return entry, false, fmt.Errorf("Can't find symbol in Symbol file")
+		return entry, fmt.Errorf("Can't find symbol in Symbol file")
 	}
 	keyTypeList := symEntry.keyTypeList
 	if err != nil {
-		return entry, eof, err
+		return entry, err
 	}
 
 	// timestamp
 	err = binary.Read(r, log.byteOrder, &entry.timeStamp)
 	if err != nil {
-		return entry, eof, err
+		return entry, err
 	}
 	//fmt.Printf("timestamp: %v\n", entry.timeStamp)
 
@@ -361,20 +360,21 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, eof bool, err error
 	var valLen uint32
 	err = binary.Read(r, log.byteOrder, &valLen)
 	if err != nil {
-		return entry, eof, err
+		return entry, err
 	}
 
-	if valLen != uint32(len(keyTypeList)) {
-		return entry, eof, fmt.Errorf("Read value list length mismatch with length of symbol type list")
-	}
+	// if valLen != uint32(len(keyTypeList)) {
+	// 	return entry, eof, fmt.Errorf("Read value list length %v mismatch with length of symbol type list %v",
+	// 		valLen, len(keyTypeList))
+	// }
 
 	// valuelist
 	entry.valueList, err = readValueList(r, log.byteOrder, keyTypeList)
 	if err != nil {
-		return entry, eof, err
+		return entry, err
 	}
 
-	return entry, eof, err
+	return entry, err
 }
 
 /*
@@ -440,7 +440,7 @@ func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interfa
 	for _, value := range valueList {
 
 		switch value.(type) {
-		case uint8, int8, bool, uint32, int32, uint64, int64:
+		case uint8, int8, bool, uint32, int32, uint64, int64, float32, float64:
 			// fixed size
 			err = binary.Write(w, byteOrder, value)
 			if err != nil {
@@ -469,7 +469,7 @@ func writeValueList(w io.Writer, byteOrder binary.ByteOrder, valueList []interfa
 
 // Read in the value list using the list of types and return the value list
 func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyType) (valueList []interface{}, err error) {
-	valueList = make([]interface{}, len(keyTypeList))
+	valueList = make([]interface{}, 0)
 	for i := 0; i < len(keyTypeList); i++ {
 		keyType := keyTypeList[i]
 		fmt.Printf("reading key value: %v\n", keyType.key)
@@ -563,6 +563,8 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 			}
 			valueList = append(valueList, b)
 		}
+		fmt.Printf("%d: valueList = %v\n", i, valueList)
 	}
+	fmt.Printf("valueList = %v\n", valueList)
 	return valueList, err
 }

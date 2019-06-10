@@ -2,6 +2,7 @@ package logsym
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"testing"
 )
@@ -123,19 +124,19 @@ func TestLogFile(t *testing.T) {
 
 	// read each entry and compare with what we expect should be there
 	for i := 0; ; i++ {
-		readEntry, eof, err := log.ReadEntry(sym)
+		readEntry, err := log.ReadEntry(sym)
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			t.Error(err)
 			return
-		}
-		if eof {
-			break
 		}
 		expectedValues, _ := createValueKeyList(i)
 		for j, readValue := range readEntry.GetValues() {
 			if readValue != expectedValues[j] {
 				t.Errorf("Log data written and read in mismatch")
-				t.Errorf("Wrote values: %v but read in %v", readValue, expectedValues[i])
+				t.Errorf("Wrote values: %v but read in %v", expectedValues[i], readValue)
 				return
 
 			}
