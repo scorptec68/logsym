@@ -363,7 +363,10 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 		return entry, err
 	}
 
-	// if valLen != uint32(len(keyTypeList)) {
+	// If we stored some redudant info about the length of the value liest
+	// then we could compare with the Type list length
+	// But we don't at the moment:
+	// if valListLen != uint32(len(keyTypeList)) {
 	// 	return entry, eof, fmt.Errorf("Read value list length %v mismatch with length of symbol type list %v",
 	// 		valLen, len(keyTypeList))
 	// }
