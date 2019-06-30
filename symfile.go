@@ -50,8 +50,8 @@ const (
 
 // KeyType consists of a key and its associated type
 type KeyType struct {
-	key       string
-	valueType LogValueType
+	Key       string
+	ValueType LogValueType
 }
 
 // SymbolEntry is the in memory version of a .sym file entry
@@ -132,7 +132,7 @@ func (entry SymbolEntry) String() string {
 }
 
 func (keyType KeyType) String() string {
-	return fmt.Sprintf("<key: \"%v\", type: %v>", keyType.key, keyType.valueType)
+	return fmt.Sprintf("<key: \"%v\", type: %v>", keyType.Key, keyType.ValueType)
 }
 
 func (valueType LogValueType) String() string {
@@ -391,11 +391,11 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		var keyType KeyType
 
 		// read value type
-		err = binary.Read(r, byteOrder, &keyType.valueType)
+		err = binary.Read(r, byteOrder, &keyType.ValueType)
 		if err != nil {
 			return err
 		}
-		//fmt.Printf("type: %v\n", keyType.valueType)
+		//fmt.Printf("type: %v\n", keyType.ValueType)
 
 		// read key length
 		var keyLen uint32
@@ -414,8 +414,8 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		if n != int(keyLen) {
 			return fmt.Errorf("Failed to read %v bytes for key data got %v bytes", keyLen, n)
 		}
-		keyType.key = string(keyBytes)
-		//fmt.Printf("key: %v\n", keyType.key)
+		keyType.Key = string(keyBytes)
+		//fmt.Printf("key: %v\n", keyType.Key)
 
 		entry.keyTypeList[i] = keyType
 	}
@@ -500,15 +500,15 @@ func (entry SymbolEntry) Write(w io.Writer) (length int, err error) {
 
 		// write type
 		keyType := entry.keyTypeList[i]
-		length += binary.Size(keyType.valueType)
-		err = binary.Write(w, byteOrder, keyType.valueType)
+		length += binary.Size(keyType.ValueType)
+		err = binary.Write(w, byteOrder, keyType.ValueType)
 		if err != nil {
 			return 0, err
 		}
 
 		// write key length
 		var keyLen uint32
-		keyLen = uint32(len(keyType.key))
+		keyLen = uint32(len(keyType.Key))
 		length += binary.Size(keyLen)
 		err = binary.Write(w, byteOrder, keyLen)
 		if err != nil {
@@ -516,7 +516,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length int, err error) {
 		}
 
 		// write key bytes
-		keyBytes := []byte(keyType.key)
+		keyBytes := []byte(keyType.Key)
 		length += int(keyLen)
 		err = binary.Write(w, byteOrder, keyBytes)
 		if err != nil {

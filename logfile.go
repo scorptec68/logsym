@@ -128,6 +128,15 @@ func metaFileName(baseFileName string) string {
 	return baseFileName + ".met"
 }
 
+// LogFileRemove deletes the log file and meta files
+func LogFileRemove(baseFileName string) error {
+	err := os.Remove(logFileName(baseFileName))
+	if err != nil {
+		return err
+	}
+	return os.Remove(metaFileName(baseFileName))
+}
+
 // LogFileCreate creates a new log data & meta file and allocates the LogFile struct
 func LogFileCreate(baseFileName string, maxFileSizeBytes int) (log *LogFile, err error) {
 
@@ -475,9 +484,9 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 	valueList = make([]interface{}, 0)
 	for i := 0; i < len(keyTypeList); i++ {
 		keyType := keyTypeList[i]
-		fmt.Printf("reading key value: %v\n", keyType.key)
+		fmt.Printf("reading key value: %v\n", keyType.Key)
 
-		switch keyType.valueType {
+		switch keyType.ValueType {
 		case TypeUint8:
 			var val uint8
 			err = binary.Read(r, byteOrder, &val)
