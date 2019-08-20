@@ -164,9 +164,46 @@ func LogFileCreate(baseFileName string, maxFileSizeBytes int) (log *LogFile, err
 	return log, nil
 }
 
+// LogFileOpenWrite opens a log file for writing and allocates the LogFile data.
+// It needs to position the log at the head of the log file.
+// So subsequent writes can append to the head/end of the log file and we can continue
+// adding entries.
+// Used by a program that creates debug logs or the log server that creates log entries.
+func LogFileOpenWrite(baseFileName string) (log *LogFile, err error) {
+	log = new(LogFile)
+	log.byteOrder = binary.LittleEndian
+
+	// Open for writing from the start of the file
+	log.entryFile, err = os.OpenFile(logFileName(baseFileName), os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// Open & read in the meta file
+	// Open for writing for updates
+	log.metaFile, err = os.OpenFile(metaFileName(baseFileName), os.O_RDWR, 0)
+	if err != nil {
+		log.entryFile.Close()
+		return nil, err
+	}
+	metaData, err := log.readMetaData()
+	if err != nil {
+		log.entryFile.Close()
+		log.metaFile.Close()
+		return nil, err
+	}
+
+	// position us at the end of the entry data file
+	// seek to head - want to write from head to tail
+	_, err = log.entryFile.Seek(int64(metaData.HeadOffset), 0)
+
+	return log, err
+}
+
 // LogFileOpenRead opens a log file for reading and allocates the LogFile data
-// It needs to position the log at tail of the log file.
+// It needs to position the log at the tail of the log file.
 // So subsequent reads can traverse from the tail to the head.
+// Used by a program that analyses and looks at debug logs.
 func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	log = new(LogFile)
 	log.byteOrder = binary.LittleEndian
