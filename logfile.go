@@ -25,6 +25,7 @@ type LogFile struct {
 	metaFile     *os.File         // meta file for header type info e.g. head pointer
 	nextLogID    LSN              // current log sequence number that we are at
 	headOffset   uint64           // offset into file where next record goes
+	tailOffset   uint64	          // offset into file where earliest record is
 	wrapNum      uint64           // how many times wrapped
 	maxSizeBytes uint64           // maximum size in bytes that the log record can grow to
 	byteOrder    binary.ByteOrder // the byte ordering of the numbers
@@ -138,7 +139,7 @@ func LogFileRemove(baseFileName string) error {
 }
 
 // LogFileCreate creates a new log data & meta file and allocates the LogFile struct
-func LogFileCreate(baseFileName string, maxFileSizeBytes int) (log *LogFile, err error) {
+func LogFileCreate(baseFileName string, maxFileSizeBytes uint64) (log *LogFile, err error) {
 
 	// create log data file in os
 	entryFile, err := os.Create(logFileName(baseFileName))
@@ -158,7 +159,13 @@ func LogFileCreate(baseFileName string, maxFileSizeBytes int) (log *LogFile, err
 		byteOrder:    binary.LittleEndian,
 		entryFile:    entryFile,
 		metaFile:     metaFile,
-		maxSizeBytes: uint64(maxFileSizeBytes),
+		maxSizeBytes: maxFileSizeBytes,
+	}
+
+	// start off the metaFile data
+	err = log.updateHeadTail()
+	if err != nil {
+		return nil, err
 	}
 
 	return log, nil
@@ -267,9 +274,17 @@ func (log *LogFile) readMetaData() (data metaData, err error) {
 	return data, err
 }
 
-// updateHead updates the meta file with the head pointer
+// move the tail to accomodate the new record
+// we will have to read log records from the tail to work out
+// where the next non overlapping one starts
+func (log *LogFile) tailPush(newRecSize uint32) error {
+
+	return nil
+}
+
+// updateHeadTail updates the meta file with the head ant tail pointer
 // and other relevant log parameters
-func (log *LogFile) updateHead() error {
+func (log *LogFile) updateHeadTail() error {
 	// where are we in the log data file?
 	offset, err := log.entryFile.Seek(0, 1)
 	if err != nil {
@@ -280,7 +295,7 @@ func (log *LogFile) updateHead() error {
 	// it is not written there yet but will be there when we next write it
 	log.headOffset = uint64(offset)
 
-	data := metaData{HeadOffset: log.headOffset, MaxSizeBytes: log.maxSizeBytes, WrapNum: log.wrapNum}
+	data := metaData{HeadOffset: log.headOffset, TailOffset: log.tailOffset, MaxSizeBytes: log.maxSizeBytes, WrapNum: log.wrapNum}
 	return log.writeMetaData(data)
 }
 
@@ -307,9 +322,16 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
 	// so start overwriting the beginning of the file
 	if log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
 		log.headOffset = 0
+		log.tailOffset = 0
 		log.wrapNum++
 		log.entryFile.Seek(0, 0)
 		log.nextLogID.wrap()
+	}
+
+	// If we have wrapped then
+	// we need to update the tail before new record writes over it
+	if (log.wrapNum > 0) {
+		log.tailPush(entry.SizeBytes())
 	}
 
 	entry.logID = log.nextLogID
@@ -323,7 +345,7 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
 
 	// update meta file - head points to next spot to write to
 	// unless it is time to wrap to the start again
-	err = log.updateHead()
+	err = log.updateHeadTail()
 	if err != nil {
 		return err
 	}
@@ -358,6 +380,7 @@ func (entry *LogEntry) SizeBytes() uint32 {
 // Returns if there is an error or the entry.
 // Note: The eof will actually occur when we reach the head of the list and
 // not at the end of the real file.
+// TODO: work out when we have reached the head and handle when we reach EOF to wrap around.
 /*
  * 128 bit LSN
  * 64 bit sym Id
