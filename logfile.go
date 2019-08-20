@@ -21,14 +21,15 @@ import (
 
 // The LogFile object matching the xxxx.log on-disk file and used to hold the log recrods.
 type LogFile struct {
-	entryFile    *os.File         // file pointer to the entry data
-	metaFile     *os.File         // meta file for header type info e.g. head pointer
-	nextLogID    LSN              // current log sequence number that we are at
-	headOffset   uint64           // offset into file where next record goes
-	tailOffset   uint64	          // offset into file where earliest record is
-	wrapNum      uint64           // how many times wrapped
-	maxSizeBytes uint64           // maximum size in bytes that the log record can grow to
-	byteOrder    binary.ByteOrder // the byte ordering of the numbers
+	entryReadFile  *os.File         // file pointer to the entry data for writing
+	entryWriteFile *os.File         // file pointer to the entry data for reading
+	metaFile       *os.File         // meta file for header type info e.g. head pointer
+	nextLogID      LSN              // current log sequence number that we are at
+	headOffset     uint64           // offset into file where next record goes
+	tailOffset     uint64           // offset into file where earliest record is
+	wrapNum        uint64           // how many times wrapped
+	maxSizeBytes   uint64           // maximum size in bytes that the log record can grow to
+	byteOrder      binary.ByteOrder // the byte ordering of the numbers
 }
 
 // LSN is the log sequence number - the monotonically increasing next number for a log record
@@ -156,10 +157,10 @@ func LogFileCreate(baseFileName string, maxFileSizeBytes uint64) (log *LogFile, 
 
 	// create the log file structure in memory
 	log = &LogFile{
-		byteOrder:    binary.LittleEndian,
-		entryFile:    entryFile,
-		metaFile:     metaFile,
-		maxSizeBytes: maxFileSizeBytes,
+		byteOrder:      binary.LittleEndian,
+		entryWriteFile: entryFile,
+		metaFile:       metaFile,
+		maxSizeBytes:   maxFileSizeBytes,
 	}
 
 	// start off the metaFile data
@@ -181,28 +182,56 @@ func LogFileOpenWrite(baseFileName string) (log *LogFile, err error) {
 	log.byteOrder = binary.LittleEndian
 
 	// Open for writing from the start of the file
-	log.entryFile, err = os.OpenFile(logFileName(baseFileName), os.O_RDWR, 0)
+	log.entryWriteFile, err = os.OpenFile(logFileName(baseFileName), os.O_WRONLY, 0)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			log.entryWriteFile.Close()
+		}
+	}()
+
+	// Open for reading the tail entries as we push
+	log.entryReadFile, err = os.OpenFile(logFileName(baseFileName), os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			log.entryReadFile.Close()
+		}
+	}()
 
 	// Open & read in the meta file
 	// Open for writing for updates
 	log.metaFile, err = os.OpenFile(metaFileName(baseFileName), os.O_RDWR, 0)
 	if err != nil {
-		log.entryFile.Close()
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			log.metaFile.Close()
+		}
+	}()
+
 	metaData, err := log.readMetaData()
 	if err != nil {
-		log.entryFile.Close()
-		log.metaFile.Close()
 		return nil, err
 	}
 
 	// position us at the end of the entry data file
 	// seek to head - want to write from head to tail
-	_, err = log.entryFile.Seek(int64(metaData.HeadOffset), 0)
+	_, err = log.entryWriteFile.Seek(int64(metaData.HeadOffset), 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the tail ready for reading so we can push the tail as we write a record
+	_, err = log.entryReadFile.Seek(int64(metaData.TailOffset), 0)
+	if err != nil {
+		return nil, err
+	}
 
 	return log, err
 }
@@ -216,41 +245,63 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	log.byteOrder = binary.LittleEndian
 
 	// Open for reading from the start of the file
-	log.entryFile, err = os.Open(logFileName(baseFileName))
+	log.entryReadFile, err = os.Open(logFileName(baseFileName))
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			log.entryReadFile.Close()
+		}
+	}()
 
 	// Open & read in the meta file
 	log.metaFile, err = os.Open(metaFileName(baseFileName))
 	if err != nil {
-		log.entryFile.Close()
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			log.metaFile.Close()
+		}
+	}()
+
 	metaData, err := log.readMetaData()
 	if err != nil {
-		log.entryFile.Close()
-		log.metaFile.Close()
 		return nil, err
 	}
 
 	// position us at the start of the entry data file
 	// seek to tail - want to read from tail to head
-	_, err = log.entryFile.Seek(int64(metaData.TailOffset), 0)
+	_, err = log.entryReadFile.Seek(int64(metaData.TailOffset), 0)
 
 	return log, err
 }
 
 // LogFileClose closes the associate files
 func (log *LogFile) LogFileClose() error {
-	err1 := log.entryFile.Close()
-	err2 := log.metaFile.Close()
+	var err1, err2, err3 error
+
+	if log.entryWriteFile != nil {
+		err1 = log.entryWriteFile.Close()
+	}
+	if log.entryReadFile != nil {
+		err2 = log.entryReadFile.Close()
+	}
+	if log.metaFile != nil {
+		err3 = log.metaFile.Close()
+	}
+
 	if err1 != nil {
 		return err1
 	}
 	if err2 != nil {
 		return err2
 	}
+	if err3 != nil {
+		return err2
+	}
+
 	return nil
 }
 
@@ -330,7 +381,7 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
 
 	// If we have wrapped then
 	// we need to update the tail before new record writes over it
-	if (log.wrapNum > 0) {
+	if log.wrapNum > 0 {
 		log.tailPush(entry.SizeBytes())
 	}
 
