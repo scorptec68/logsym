@@ -330,6 +330,13 @@ func (log *LogFile) readMetaData() (data metaData, err error) {
 // where the next non overlapping one starts
 func (log *LogFile) tailPush(newRecSize uint32) error {
 
+	//   |-----|-----|------|------|.......|
+	//         ^     ^                     ^
+	//        head   tail                  maxsize
+	//         |-gap-|
+	// loop reading in records from the tail
+	// until the accumlated size (including head-tail gap is greated than the new rec size
+	// tail points to oldest complete record
 	return nil
 }
 
@@ -337,7 +344,7 @@ func (log *LogFile) tailPush(newRecSize uint32) error {
 // and other relevant log parameters
 func (log *LogFile) updateHeadTail() error {
 	// where are we in the log data file?
-	offset, err := log.entryFile.Seek(0, 1)
+	offset, err := log.entryWriteFile.Seek(0, 1)
 	if err != nil {
 		return err
 	}
@@ -375,7 +382,7 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
 		log.headOffset = 0
 		log.tailOffset = 0
 		log.wrapNum++
-		log.entryFile.Seek(0, 0)
+		log.entryWriteFile.Seek(0, 0)
 		log.nextLogID.wrap()
 	}
 
@@ -388,7 +395,7 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
 	entry.logID = log.nextLogID
 
 	// write our data to the file
-	_, err := entry.Write(log.entryFile, log.byteOrder)
+	_, err := entry.Write(log.entryWriteFile, log.byteOrder)
 	if err != nil {
 		return err
 	}
@@ -443,7 +450,7 @@ func (entry *LogEntry) SizeBytes() uint32 {
  */
 func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	err = nil
-	r := bufio.NewReader(log.entryFile)
+	r := bufio.NewReader(log.entryReadFile)
 
 	// logID LSN
 	err = binary.Read(r, log.byteOrder, &entry.logID)
