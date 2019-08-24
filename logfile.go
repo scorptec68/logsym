@@ -328,15 +328,55 @@ func (log *LogFile) readMetaData() (data metaData, err error) {
 // move the tail to accomodate the new record
 // we will have to read log records from the tail to work out
 // where the next non overlapping one starts
-func (log *LogFile) tailPush(newRecSize uint32) error {
+func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 
 	//   |-----|-----|------|------|.......|
 	//         ^     ^                     ^
 	//        head   tail                  maxsize
 	//         |-gap-|
 	// loop reading in records from the tail
-	// until the accumlated size (including head-tail gap is greated than the new rec size
+	// until the accumlated size (including head-tail gap is greater than the new rec size
 	// tail points to oldest complete record
+
+	// 1st lap
+	//   |-----|-----|------|------|.......|
+	//   ^     ^                           ^
+	//   tail  head                        maxsize
+
+	//   |-----|-----|------|------|....|......|
+	//   ^                              ^      ^
+	//   tail                           head   maxsize
+	//   Add 1 more rec but it won't fit
+	//   |-----|-----|------|------|....|000000|
+	//   ^                              ^      ^
+	//   tail                           head   maxsize
+	//   if we can't fit then record entry starts at beginning of file
+
+	gap := log.tailOffset - log.headOffset
+	sizeAvailable := gap
+	if gap > 0 { // tail in front of head
+		for {
+			if uint64(newRecSize) <= sizeAvailable {
+				return nil
+			}
+			entry, err := log.ReadEntry(sym)
+			if err == io.EOF {
+				// we hit the end and no more tail entries to read
+				// BUT if there is a gap at the end it might be
+				// big enough for the head entry
+				// compare tailOffset with maxsize
+				endGap := log.maxSizeBytes - log.tailOffset
+				if newRecSize <= sizeAvailable + endGap {
+					TODO
+				}
+			} else if err != nil {
+				return err
+			}
+			reclen := entry.SizeBytes()
+			sizeAvailable += uint64(reclen)
+			log.tailOffset += uint64(reclen)
+		}
+	}
 	return nil
 }
 
@@ -373,7 +413,7 @@ func (lsn *LSN) wrap() {
 // from the beginning of the file.
 // Note: if an entry would wrap then don't do a partial write but instead start
 // from the beginning of the file with the new entry.
-func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
+func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 
 	// Wrap case
 	// then we would go over the end of the log file
@@ -389,7 +429,7 @@ func (log *LogFile) LogFileAddEntry(entry LogEntry) error {
 	// If we have wrapped then
 	// we need to update the tail before new record writes over it
 	if log.wrapNum > 0 {
-		log.tailPush(entry.SizeBytes())
+		log.tailPush(sym, entry.SizeBytes())
 	}
 
 	entry.logID = log.nextLogID
