@@ -365,10 +365,15 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				// BUT if there is a gap at the end it might be
 				// big enough for the head entry
 				// compare tailOffset with maxsize
+				// |------|000000000|
+				// ^      ^---------^
+				//        tail      maxsize
 				endGap := log.maxSizeBytes - log.tailOffset
-				if newRecSize <= sizeAvailable + endGap {
+				if uint64(newRecSize) <= sizeAvailable + endGap {
+					// then fit in the end gap
 					TODO
 				}
+				log.tailOffset = 0; // wrap around tail
 			} else if err != nil {
 				return err
 			}
