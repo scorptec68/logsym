@@ -325,7 +325,7 @@ func (log *LogFile) readMetaData() (data metaData, err error) {
 	return data, err
 }
 
-// move the tail to accomodate the new record
+// move the tail to accommodate the new record
 // we will have to read log records from the tail to work out
 // where the next non overlapping one starts
 func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
@@ -343,6 +343,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 	//   ^     ^                           ^
 	//   tail  head                        maxsize
 
+	// Going into 2nd lap
 	//   |-----|-----|------|------|....|......|
 	//   ^                              ^      ^
 	//   tail                           head   maxsize
@@ -351,6 +352,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 	//   ^                              ^      ^
 	//   tail                           head   maxsize
 	//   if we can't fit then record entry starts at beginning of file
+	//   and we push the tail from there.
 
 	gap := log.tailOffset - log.headOffset
 	sizeAvailable := gap
@@ -371,9 +373,17 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				endGap := log.maxSizeBytes - log.tailOffset
 				if uint64(newRecSize) <= sizeAvailable + endGap {
 					// then fit in the end gap
-					TODO
+				} else {
+					// zero out where head is and move head around
+					log.headOffset = 0
 				}
 				log.tailOffset = 0; // wrap around tail
+				sizeAvailable = 0
+				_, err = log.entryReadFile.Seek(0, 0)
+				if err != nil {
+					return err
+				}
+				continue
 			} else if err != nil {
 				return err
 			}
