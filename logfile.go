@@ -325,11 +325,28 @@ func (log *LogFile) readMetaData() (data metaData, err error) {
 	return data, err
 }
 
-// move the tail to accommodate the new record
+// 1st lap - no tail pushing needed
+//   |-----|-----|------|------|.......|
+//   ^     ^                           ^
+//   tail  head                        maxsize
+//
+// Going into 2nd lap
+//   |-----|-----|------|------|....|......|
+//   ^                              ^      ^
+//   tail                           head   maxsize
+//   Add 1 more rec but it won't fit
+//   |-----|-----|------|------|....|000000|
+//   ^                              ^      ^
+//   tail                           head   maxsize
+//   if we can't fit then record entry starts at beginning of file
+//   and we push the tail from there.
+
+// Move the tail to accommodate the new record
 // we will have to read log records from the tail to work out
 // where the next non overlapping one starts
 func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 
+	// lap >= 2
 	//   |-----|-----|------|------|.......|
 	//         ^     ^                     ^
 	//        head   tail                  maxsize
@@ -338,31 +355,20 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 	// until the accumlated size (including head-tail gap is greater than the new rec size
 	// tail points to oldest complete record
 
-	// 1st lap
-	//   |-----|-----|------|------|.......|
-	//   ^     ^                           ^
-	//   tail  head                        maxsize
-
-	// Going into 2nd lap
-	//   |-----|-----|------|------|....|......|
-	//   ^                              ^      ^
-	//   tail                           head   maxsize
-	//   Add 1 more rec but it won't fit
-	//   |-----|-----|------|------|....|000000|
-	//   ^                              ^      ^
-	//   tail                           head   maxsize
-	//   if we can't fit then record entry starts at beginning of file
-	//   and we push the tail from there.
-
-	gap := log.tailOffset - log.headOffset
-	sizeAvailable := gap
-	if gap > 0 { // tail in front of head
+	tailGap := log.tailOffset - log.headOffset
+	sizeAvailable := tailGap
+	if tailGap >= 0 { // tail in front of head
 		for {
 			if uint64(newRecSize) <= sizeAvailable {
+				// moved tail far enough and we have space for a new record
 				return nil
 			}
 			entry, err := log.ReadEntry(sym)
-			if err == io.EOF {
+			if err == nil {
+				reclen := entry.SizeBytes()
+				sizeAvailable += uint64(reclen) // size engulfs old tail record
+				log.tailOffset += uint64(reclen) // tail moves forward to newer record
+			} else if err == io.EOF {
 				// we hit the end and no more tail entries to read
 				// BUT if there is a gap at the end it might be
 				// big enough for the head entry
@@ -373,25 +379,25 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				endGap := log.maxSizeBytes - log.tailOffset
 				if uint64(newRecSize) <= sizeAvailable + endGap {
 					// then fit in the end gap
+					sizeAvailable += endGap
 				} else {
 					// zero out where head is and move head around
+					sizeAvailable = 0
 					log.headOffset = 0
+					log.wrapNum++
+					log.entryWriteFile.Seek(0, 0)
+					log.nextLogID.wrap()
 				}
 				log.tailOffset = 0; // wrap around tail
-				sizeAvailable = 0
 				_, err = log.entryReadFile.Seek(0, 0)
 				if err != nil {
 					return err
 				}
-				continue
-			} else if err != nil {
+			} else {
 				return err
 			}
-			reclen := entry.SizeBytes()
-			sizeAvailable += uint64(reclen)
-			log.tailOffset += uint64(reclen)
-		}
-	}
+		} // for each tail record
+	} // if
 	return nil
 }
 
@@ -430,10 +436,10 @@ func (lsn *LSN) wrap() {
 // from the beginning of the file with the new entry.
 func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 
-	// Wrap case
+	// Wrap case on 1st iteration
 	// then we would go over the end of the log file
 	// so start overwriting the beginning of the file
-	if log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
+	if log.wrapNum == 0 && log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
 		log.headOffset = 0
 		log.tailOffset = 0
 		log.wrapNum++
@@ -446,6 +452,8 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 	if log.wrapNum > 0 {
 		log.tailPush(sym, entry.SizeBytes())
 	}
+
+    // Now have room for new entry to go at the head and tail is out of way
 
 	entry.logID = log.nextLogID
 
