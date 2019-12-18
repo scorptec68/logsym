@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 	"unsafe"
+	"strings"
 )
 
 // logfile is concerned with the internally rotated changing log data.
@@ -21,8 +22,8 @@ import (
 
 // The LogFile object matching the xxxx.log on-disk file and used to hold the log recrods.
 type LogFile struct {
-	entryReadFile  *os.File         // file pointer to the entry data for writing
-	entryWriteFile *os.File         // file pointer to the entry data for reading
+	entryReadFile  *os.File         // file pointer to the entry data for reading
+	entryWriteFile *os.File         // file pointer to the entry data for writing
 	metaFile       *os.File         // meta file for header type info e.g. head pointer
 	nextLogID      LSN              // current log sequence number that we are at
 	headOffset     uint64           // offset into file where next record goes
@@ -276,6 +277,19 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	_, err = log.entryReadFile.Seek(int64(metaData.TailOffset), 0)
 
 	return log, err
+}
+
+func (log LogFile) String() string {
+	var str strings.Builder
+	fmt.Fprintf(&str, "LogFile\n")
+	fmt.Fprintf(&str, "  nextLogId: %v\n", log.nextLogID)
+	fmt.Fprintf(&str, "  headOffset: %v\n", log.headOffset)
+	fmt.Fprintf(&str, "  tailOffset: %v\n", log.tailOffset)
+	fmt.Fprintf(&str, "  wrapNum: %v\n", log.wrapNum)
+	fmt.Fprintf(&str, "  maxSizeBytes: %v\n", log.maxSizeBytes)
+	fmt.Fprintf(&str, "  byteOrder: %v\n", log.byteOrder)
+
+	return str.String()
 }
 
 // LogFileClose closes the associate files

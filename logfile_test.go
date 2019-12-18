@@ -166,17 +166,6 @@ func ExampleLogFile() {
 	fmt.Printf("%v", log)
 
 	// Output:
-	// SymFile
+	// LogFile
 	//   nextSymId: 445
-	//   entries:
-	//     Key: "test message 0testfile042"
-	//     Value: Entry<symId: 0, numAccesses: 2, level: DEBUG, message: "test message 0", fname: "testfile0", line: 42, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
-	//     Key: "test message 1testfile143"
-	//     Value: Entry<symId: 89, numAccesses: 1, level: DEBUG, message: "test message 1", fname: "testfile1", line: 43, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
-	//     Key: "test message 2testfile244"
-	//     Value: Entry<symId: 178, numAccesses: 1, level: DEBUG, message: "test message 2", fname: "testfile2", line: 44, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
-	//     Key: "test message 3testfile345"
-	//     Value: Entry<symId: 267, numAccesses: 0, level: DEBUG, message: "test message 3", fname: "testfile3", line: 45, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
-	//     Key: "test message 4testfile446"
-	//     Value: Entry<symId: 356, numAccesses: 0, level: DEBUG, message: "test message 4", fname: "testfile4", line: 46, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
 }
