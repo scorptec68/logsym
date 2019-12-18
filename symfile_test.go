@@ -10,12 +10,12 @@ import (
 
 func createAddSymEntries(sym *SymFile, numEntries int) error {
 	keyTypes := make([]KeyType, 3)
-	keyTypes[0].key = "jobid"
-	keyTypes[0].valueType = TypeUint32
-	keyTypes[1].key = "printerid"
-	keyTypes[1].valueType = TypeString
-	keyTypes[2].key = "lang"
-	keyTypes[2].valueType = TypeString
+	keyTypes[0].Key = "jobid"
+	keyTypes[0].ValueType = TypeUint32
+	keyTypes[1].Key = "printerid"
+	keyTypes[1].ValueType = TypeString
+	keyTypes[2].Key = "lang"
+	keyTypes[2].ValueType = TypeString
 
 	for i := 0; i < numEntries; i++ {
 		iStr := strconv.Itoa(i)

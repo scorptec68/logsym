@@ -11,18 +11,18 @@ import (
 
 func createValueKeyList(i int) (valueList []interface{}, keyTypes []KeyType) {
 	keyTypes = make([]KeyType, 6)
-	keyTypes[0].key = "bool key"
-	keyTypes[0].valueType = TypeBoolean
-	keyTypes[1].key = "u32 key"
-	keyTypes[1].valueType = TypeUint32
-	keyTypes[2].key = "u64 key"
-	keyTypes[2].valueType = TypeUint64
-	keyTypes[3].key = "f32 key"
-	keyTypes[3].valueType = TypeFloat32
-	keyTypes[4].key = "f64 key"
-	keyTypes[4].valueType = TypeFloat64
-	keyTypes[5].key = "string key"
-	keyTypes[5].valueType = TypeString
+	keyTypes[0].Key = "bool key"
+	keyTypes[0].ValueType = TypeBoolean
+	keyTypes[1].Key = "u32 key"
+	keyTypes[1].ValueType = TypeUint32
+	keyTypes[2].Key = "u64 key"
+	keyTypes[2].ValueType = TypeUint64
+	keyTypes[3].Key = "f32 key"
+	keyTypes[3].ValueType = TypeFloat32
+	keyTypes[4].Key = "f64 key"
+	keyTypes[4].ValueType = TypeFloat64
+	keyTypes[5].Key = "string key"
+	keyTypes[5].ValueType = TypeString
 
 	// variables
 	var b bool
@@ -64,7 +64,7 @@ func createAddEntries(log *LogFile, sym *SymFile, numEntries int) error {
 		}
 
 		logEntry := CreateLogEntry(symID, valueList)
-		err = log.LogFileAddEntry(logEntry)
+		err = log.LogFileAddEntry(sym, logEntry)
 		if err != nil {
 			return fmt.Errorf("Log file add error: %v", err)
 		}
@@ -72,7 +72,7 @@ func createAddEntries(log *LogFile, sym *SymFile, numEntries int) error {
 	return nil
 }
 
-func createLog(fname string, logSize int) (*LogFile, *SymFile, error) {
+func createLog(fname string, logSize uint64) (*LogFile, *SymFile, error) {
 
 	log, err := LogFileCreate(fname, logSize)
 	if err != nil {

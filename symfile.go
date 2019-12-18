@@ -50,19 +50,20 @@ const (
 
 // KeyType consists of a key and its associated type
 type KeyType struct {
-	Key       string
-	ValueType LogValueType
+	Key       string       // the key variable name
+	ValueType LogValueType // the type of the associated value
 }
 
 // SymbolEntry is the in memory version of a .sym file entry
 type SymbolEntry struct {
-	symID       SymID
-	numAccesses uint64
-	level       LogLevel
-	message     string
-	fname       string
-	line        uint32
-	keyTypeList []KeyType
+	symID       SymID // offset into sym file
+	numAccesses uint64 // number of times the log line static info is called
+
+	level       LogLevel // log level used eg. debug
+	message     string // main message string for the logging
+	fname       string // the source file name where logging is done
+	line        uint32 // the line number in the source file
+	keyTypeList []KeyType // the list of key/type pairs for the logging line
 }
 
 /*
@@ -205,7 +206,13 @@ func SymFileCreate(baseFileName string) (sym *SymFile, err error) {
 	return sym, nil
 }
 
-// symFileReadin reads a whole sym file into a map
+// symFileReadin reads a whole sym file into 2 maps
+// input:
+//   base file name for symfile
+// output:
+//   map: msg -> entry (to look up symbol from the message in the original source file)
+//   map: sym-id  -> entry (to look up symbol from the log entry in the log file)
+//   error
 func symFileReadin(baseFileName string) (msg2Entries map[string]*SymbolEntry,
 	id2Entries map[SymID]*SymbolEntry,
 	err error) {
@@ -279,7 +286,7 @@ func CreateSymbolEntry(message string, filename string, line uint32, keyTypes []
 
 // SymFileAddEntry adds an entry to map and to file if doesn't exist already.
 func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
-	// If already there ...
+	// If entry already there in symfile then return it ...
 	if entry, ok := sym.msg2Entries[entry.keyString()]; ok {
 		entry.numAccesses++
 		return entry.symID, nil
