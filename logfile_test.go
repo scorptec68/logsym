@@ -72,7 +72,7 @@ func createAddEntries(log *LogFile, sym *SymFile, numEntries int) error {
 	return nil
 }
 
-func createLog(fname string, logSize uint64) (*LogFile, *SymFile, error) {
+func createLog(fname string, numEntries int, logSize uint64) (*LogFile, *SymFile, error) {
 
 	log, err := LogFileCreate(fname, logSize)
 	if err != nil {
@@ -87,7 +87,7 @@ func createLog(fname string, logSize uint64) (*LogFile, *SymFile, error) {
 		return nil, nil, err
 	}
 
-	err = createAddEntries(log, sym, 5)
+	err = createAddEntries(log, sym, numEntries)
 	if err != nil {
 		fmt.Printf("Log add entries error: %v", err)
 		log.LogFileClose()
@@ -100,7 +100,7 @@ func createLog(fname string, logSize uint64) (*LogFile, *SymFile, error) {
 
 func TestLogFile(t *testing.T) {
 	// prime up a log file with some entries in it
-	log, sym, err := createLog("testfile", 32*1024)
+	log, sym, err := createLog("testfile", 5, 32*1024)
 	if err != nil {
 		t.Errorf("Failed to create log: %v", err)
 		return
@@ -147,7 +147,9 @@ func TestLogFile(t *testing.T) {
 
 func ExampleLogFile() {
 
-	log, sym, err := createLog("testfile", 32*1024)
+	// 1. Setting up the log and writing to the disk file
+
+	log, sym, err := createLog("testfile", 5, 32*1024)
 	if err != nil {
 		fmt.Printf("Log create error: %v", err)
 		return
@@ -165,6 +167,35 @@ func ExampleLogFile() {
 	log.LogFileClose()
 	fmt.Printf("%v", log)
 
+	// 2. Reading back the log file
+
+	// open log for reading
+	log, err = LogFileOpenRead("testfile")
+	if err != nil {
+		fmt.Printf("Log open error: %v", err)
+		return
+	}
+	defer log.LogFileClose()
+
+	for i := 0; ; i++ {
+		readEntry, err := log.ReadEntry(sym)
+		if err != nil {
+			if err == io.EOF {
+				fmt.Printf("Reached end of log file\n")
+				break
+			}
+			fmt.Printf("Log read error: %v", err)
+			return
+		}
+
+		fmt.Printf("----\n")
+		fmt.Printf("%v", readEntry)
+		symEntry, ok := sym.SymFileGetEntry(readEntry.SymbolID())
+		if ok {
+			fmt.Printf("%v\n", symEntry)
+		}
+		fmt.Printf("----\n")
+	}
 	// Output:
 	// LogFile
 	//   nextSymId: 445

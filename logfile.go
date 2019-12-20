@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 	"unsafe"
-	"strings"
 )
 
 // logfile is concerned with the internally rotated changing log data.
@@ -66,6 +66,30 @@ func CreateLogEntry(symbolID SymID, valueList []interface{}) (entry LogEntry) {
 // GetValues returns the associated values in a log entry
 func (entry LogEntry) GetValues() []interface{} {
 	return entry.valueList
+}
+
+// SymbolID returns the log entry's symid link
+func (entry LogEntry) SymbolID() SymID {
+	return entry.symbolID
+}
+
+// TimeStamp returns the associated time stamp with the entry
+func (entry LogEntry) TimeStamp() uint64 {
+	return entry.timeStamp
+}
+
+func (entry LogEntry) String() string {
+
+	var str strings.Builder
+	fmt.Fprintf(&str, "LogEntry\n")
+	fmt.Fprintf(&str, "  logId: %v\n", entry.logID)
+	fmt.Fprintf(&str, "  symId: %v\n", entry.symbolID)
+	fmt.Fprintf(&str, "  timeStamp: %v\n", entry.timeStamp)
+	for _, value := range entry.GetValues() {
+		fmt.Fprintf(&str, "  value: %v\n", value)
+	}
+
+	return str.String()
 }
 
 // Value list with Go-types into log data ondisk-type list
@@ -380,7 +404,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 			entry, err := log.ReadEntry(sym)
 			if err == nil {
 				reclen := entry.SizeBytes()
-				sizeAvailable += uint64(reclen) // size engulfs old tail record
+				sizeAvailable += uint64(reclen)  // size engulfs old tail record
 				log.tailOffset += uint64(reclen) // tail moves forward to newer record
 			} else if err == io.EOF {
 				// we hit the end and no more tail entries to read
@@ -391,7 +415,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				// ^      ^---------^
 				//        tail      maxsize
 				endGap := log.maxSizeBytes - log.tailOffset
-				if uint64(newRecSize) <= sizeAvailable + endGap {
+				if uint64(newRecSize) <= sizeAvailable+endGap {
 					// then fit in the end gap
 					sizeAvailable += endGap
 				} else {
@@ -402,7 +426,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 					log.entryWriteFile.Seek(0, 0)
 					log.nextLogID.wrap()
 				}
-				log.tailOffset = 0; // wrap around tail
+				log.tailOffset = 0 // wrap around tail
 				_, err = log.entryReadFile.Seek(0, 0)
 				if err != nil {
 					return err
@@ -467,7 +491,7 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 		log.tailPush(sym, entry.SizeBytes())
 	}
 
-    // Now have room for new entry to go at the head and tail is out of way
+	// Now have room for new entry to go at the head and tail is out of way
 
 	entry.logID = log.nextLogID
 

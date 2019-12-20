@@ -56,13 +56,13 @@ type KeyType struct {
 
 // SymbolEntry is the in memory version of a .sym file entry
 type SymbolEntry struct {
-	symID       SymID // offset into sym file
+	symID       SymID  // offset into sym file
 	numAccesses uint64 // number of times the log line static info is called
 
-	level       LogLevel // log level used eg. debug
-	message     string // main message string for the logging
-	fname       string // the source file name where logging is done
-	line        uint32 // the line number in the source file
+	level       LogLevel  // log level used eg. debug
+	message     string    // main message string for the logging
+	fname       string    // the source file name where logging is done
+	line        uint32    // the line number in the source file
 	keyTypeList []KeyType // the list of key/type pairs for the logging line
 }
 
@@ -128,7 +128,7 @@ func (sym SymFile) String() string {
 }
 
 func (entry SymbolEntry) String() string {
-	return fmt.Sprintf("Entry<symId: %v, numAccesses: %v, level: %v, message: \"%v\", fname: \"%v\", line: %v, keyTypes: %v>",
+	return fmt.Sprintf("Symbol Entry <symId: %v, numAccesses: %v, level: %v, message: \"%v\", fname: \"%v\", line: %v, keyTypes: %v>",
 		entry.symID, entry.numAccesses, entry.level, entry.message, entry.fname, entry.line, entry.keyTypeList)
 }
 

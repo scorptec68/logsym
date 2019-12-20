@@ -28,13 +28,13 @@ func createAddSymEntries(sym *SymFile, numEntries int) error {
 	return nil
 }
 
-func createSym(fname string) (*SymFile, error) {
+func createSym(fname string, numEntries int) (*SymFile, error) {
 	sym, err := SymFileCreate(fname)
 	if err != nil {
 		fmt.Printf("Sym create error: %v", err)
 		return nil, err
 	}
-	err = createAddSymEntries(sym, 5)
+	err = createAddSymEntries(sym, numEntries)
 	if err != nil {
 		fmt.Printf("Sym add entries error: %v", err)
 		return nil, err
@@ -44,7 +44,7 @@ func createSym(fname string) (*SymFile, error) {
 }
 
 func TestSymFile(t *testing.T) {
-	sym1, err := createSym("testfile")
+	sym1, err := createSym("testfile", 5)
 	if err != nil {
 		t.Errorf("Failed to create sym: %v", err)
 		return
@@ -68,7 +68,7 @@ func TestSymFile(t *testing.T) {
 
 func ExampleSymFile() {
 
-	sym, err := createSym("testfile")
+	sym, err := createSym("testfile", 5)
 	if err != nil {
 		fmt.Printf("Sym create error: %v", err)
 		return
@@ -91,13 +91,13 @@ func ExampleSymFile() {
 	//   nextSymId: 445
 	//   entries:
 	//     Key: "test message 0testfile042"
-	//     Value: Entry<symId: 0, numAccesses: 2, level: DEBUG, message: "test message 0", fname: "testfile0", line: 42, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
+	//     Value: Symbol Entry <symId: 0, numAccesses: 2, level: DEBUG, message: "test message 0", fname: "testfile0", line: 42, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
 	//     Key: "test message 1testfile143"
-	//     Value: Entry<symId: 89, numAccesses: 1, level: DEBUG, message: "test message 1", fname: "testfile1", line: 43, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
+	//     Value: Symbol Entry <symId: 89, numAccesses: 1, level: DEBUG, message: "test message 1", fname: "testfile1", line: 43, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
 	//     Key: "test message 2testfile244"
-	//     Value: Entry<symId: 178, numAccesses: 1, level: DEBUG, message: "test message 2", fname: "testfile2", line: 44, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
+	//     Value: Symbol Entry <symId: 178, numAccesses: 1, level: DEBUG, message: "test message 2", fname: "testfile2", line: 44, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
 	//     Key: "test message 3testfile345"
-	//     Value: Entry<symId: 267, numAccesses: 0, level: DEBUG, message: "test message 3", fname: "testfile3", line: 45, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
+	//     Value: Symbol Entry <symId: 267, numAccesses: 0, level: DEBUG, message: "test message 3", fname: "testfile3", line: 45, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
 	//     Key: "test message 4testfile446"
-	//     Value: Entry<symId: 356, numAccesses: 0, level: DEBUG, message: "test message 4", fname: "testfile4", line: 46, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
+	//     Value: Symbol Entry <symId: 356, numAccesses: 0, level: DEBUG, message: "test message 4", fname: "testfile4", line: 46, keyTypes: [<key: "jobid", type: Uint32> <key: "printerid", type: String> <key: "lang", type: String>]>
 }
