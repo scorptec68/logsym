@@ -63,6 +63,8 @@ func createAddEntries(log *LogFile, sym *SymFile, numEntries int) error {
 			return fmt.Errorf("Sym add error: %v", err)
 		}
 
+		//fmt.Printf("symid = %v\n", symID)
+
 		logEntry := CreateLogEntry(symID, valueList)
 		err = log.LogFileAddEntry(sym, logEntry)
 		if err != nil {

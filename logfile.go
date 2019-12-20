@@ -572,7 +572,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	// Get typeList from the symbol file
 	symEntry, ok := sym.SymFileGetEntry(entry.symbolID)
 	if !ok {
-		return entry, fmt.Errorf("Can't find symbol in Symbol file")
+		return entry, fmt.Errorf("Can't find symbol in Symbol file: %d", entry.symbolID)
 	}
 	keyTypeList := symEntry.keyTypeList
 	if err != nil {

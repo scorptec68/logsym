@@ -301,11 +301,12 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	//fmt.Printf("len of write entry: %v\n", len)
 
 	sym.nextSymID += SymID(len)
+	//fmt.Printf("sym.nextSymID: %v\n", sym.nextSymID)
+
 	sym.msg2Entries[entry.keyString()] = &entry
 	sym.id2Entries[entry.symID] = &entry
 
-	//fmt.Printf("sym.nextSymID: %v\n", sym.nextSymID)
-	return sym.nextSymID, nil
+	return entry.symID, nil
 }
 
 // SymFileGetEntry returns the entry given the id
