@@ -25,6 +25,7 @@ type LogFile struct {
 	entryReadFile  *os.File         // file pointer to the entry data for reading
 	entryWriteFile *os.File         // file pointer to the entry data for writing
 	metaFile       *os.File         // meta file for header type info e.g. head pointer
+	reader         *bufio.Reader    // buffered reader from log file
 	nextLogID      LSN              // current log sequence number that we are at
 	headOffset     uint64           // offset into file where next record goes
 	tailOffset     uint64           // offset into file where earliest record is
@@ -300,6 +301,8 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	// seek to tail - want to read from tail to head
 	_, err = log.entryReadFile.Seek(int64(metaData.TailOffset), 0)
 
+	log.reader = bufio.NewReader(log.entryReadFile)
+
 	return log, err
 }
 
@@ -551,17 +554,16 @@ func (entry *LogEntry) SizeBytes() uint32 {
  */
 func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	err = nil
-	r := bufio.NewReader(log.entryReadFile)
 
 	// logID LSN
-	err = binary.Read(r, log.byteOrder, &entry.logID)
+	err = binary.Read(log.reader, log.byteOrder, &entry.logID)
 	if err != nil {
 		return entry, err
 	}
-	//fmt.Printf("read logId: %v\n", entry.logID)
+	fmt.Printf("read logId: %v\n", entry.logID)
 
 	// symID
-	err = binary.Read(r, log.byteOrder, &entry.symbolID)
+	err = binary.Read(log.reader, log.byteOrder, &entry.symbolID)
 	if err != nil {
 		return entry, err
 	}
@@ -578,7 +580,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	}
 
 	// timestamp
-	err = binary.Read(r, log.byteOrder, &entry.timeStamp)
+	err = binary.Read(log.reader, log.byteOrder, &entry.timeStamp)
 	if err != nil {
 		return entry, err
 	}
@@ -586,7 +588,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 
 	// length of value data
 	var valLen uint32
-	err = binary.Read(r, log.byteOrder, &valLen)
+	err = binary.Read(log.reader, log.byteOrder, &valLen)
 	if err != nil {
 		return entry, err
 	}
@@ -600,7 +602,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	// }
 
 	// valuelist
-	entry.valueList, err = readValueList(r, log.byteOrder, keyTypeList)
+	entry.valueList, err = readValueList(log.reader, log.byteOrder, keyTypeList)
 	if err != nil {
 		return entry, err
 	}
