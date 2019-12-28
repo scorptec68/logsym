@@ -79,13 +79,37 @@ func (entry LogEntry) TimeStamp() uint64 {
 	return entry.timeStamp
 }
 
+func tStamp2String(tstamp uint64) string {
+	t := time.Unix(0, int64(tstamp))
+	return t.Format("02/01/2006, 15:04:05")
+}
+
+// StringRel returns string version of log entry with relative timestamp from now.
+// Useful for testing purposes.
+func (entry LogEntry) StringRel() string {
+	now := uint64(time.Now().UnixNano())
+	diff := now - entry.timeStamp
+	diffSec := diff / 1000000000
+
+	var str strings.Builder
+	fmt.Fprintf(&str, "LogEntry\n")
+	fmt.Fprintf(&str, "  logId: %v\n", entry.logID)
+	fmt.Fprintf(&str, "  symId: %v\n", entry.symbolID)
+	fmt.Fprintf(&str, "  timeStamp rel: now - %v secs\n", diffSec)
+	for _, value := range entry.GetValues() {
+		fmt.Fprintf(&str, "  value: %v\n", value)
+	}
+
+	return str.String()
+}
+
 func (entry LogEntry) String() string {
 
 	var str strings.Builder
 	fmt.Fprintf(&str, "LogEntry\n")
 	fmt.Fprintf(&str, "  logId: %v\n", entry.logID)
 	fmt.Fprintf(&str, "  symId: %v\n", entry.symbolID)
-	fmt.Fprintf(&str, "  timeStamp: %v\n", entry.timeStamp)
+	fmt.Fprintf(&str, "  timeStamp: %v (%v)\n", tStamp2String(entry.timeStamp), entry.timeStamp)
 	for _, value := range entry.GetValues() {
 		fmt.Fprintf(&str, "  value: %v\n", value)
 	}
@@ -560,7 +584,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	if err != nil {
 		return entry, err
 	}
-	fmt.Printf("read logId: %v\n", entry.logID)
+	//fmt.Printf("read logId: %v\n", entry.logID)
 
 	// symID
 	err = binary.Read(log.reader, log.byteOrder, &entry.symbolID)
@@ -705,7 +729,7 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 	valueList = make([]interface{}, 0)
 	for i := 0; i < len(keyTypeList); i++ {
 		keyType := keyTypeList[i]
-		fmt.Printf("reading key value: %v\n", keyType.Key)
+		//fmt.Printf("reading key value: %v\n", keyType.Key)
 
 		switch keyType.ValueType {
 		case TypeUint8:
@@ -796,8 +820,8 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 			}
 			valueList = append(valueList, b)
 		}
-		fmt.Printf("%d: valueList = %v\n", i, valueList)
+		//fmt.Printf("%d: valueList = %v\n", i, valueList)
 	}
-	fmt.Printf("valueList = %v\n", valueList)
+	//fmt.Printf("valueList = %v\n", valueList)
 	return valueList, err
 }
