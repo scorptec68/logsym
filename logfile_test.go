@@ -308,3 +308,46 @@ func ExampleLogFile() {
 	// Symbol Entry <symId: 0, numAccesses: 2, level: DEBUG, message: "test message 0", fname: "testfile0", line: 42, keyTypes: [<key: "bool key", type: Boolean> <key: "u32 key", type: Uint32> <key: "u64 key", type: Uint64> <key: "f32 key", type: Float32> <key: "f64 key", type: Float64> <key: "string key", type: String>]>
 	// Reached end of log file
 }
+
+func ExampleLogFile2() {
+
+	// 1. Setting up the log and writing to the disk file
+
+	log, sym, err := createLog("testfile", 5, 300)
+	if err != nil {
+		fmt.Printf("Log create error: %v", err)
+		return
+	}
+
+	log.LogFileClose()
+	fmt.Printf("%v", log)
+
+	// open log for reading
+	log, err = LogFileOpenRead("testfile")
+	if err != nil {
+		fmt.Printf("Log open error: %v", err)
+		return
+	}
+	defer log.LogFileClose()
+
+	for i := 0; ; i++ {
+		readEntry, err := log.ReadEntry(sym)
+		if err != nil {
+			if err == io.EOF {
+				fmt.Printf("Reached end of log file\n")
+				break
+			}
+			fmt.Printf("Log read error: %v", err)
+			return
+		}
+
+		fmt.Printf("%v", readEntry.StringRel())
+		symEntry, ok := sym.SymFileGetEntry(readEntry.SymbolID())
+		if ok {
+			fmt.Printf("%v\n", symEntry)
+		}
+	}
+
+	// Output:
+	// LogFile
+}
