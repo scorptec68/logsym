@@ -192,23 +192,35 @@ func LogFileRemove(baseFileName string) error {
 // LogFileCreate creates a new log data & meta file and allocates the LogFile struct
 func LogFileCreate(baseFileName string, maxFileSizeBytes uint64) (log *LogFile, err error) {
 
-	// create log data file in os
-	entryFile, err := os.Create(logFileName(baseFileName))
+	// create log write data file in os
+	entryWriteFile, err := os.Create(logFileName(baseFileName))
 	if err != nil {
 		return nil, err
 	}
 
+	// create log read data file in os
+	// this is at start and used to move the tail onwards
+	entryReadFile, err := os.Open(logFileName(baseFileName))
+	if err != nil {
+		entryWriteFile.Close();
+		return nil, err
+	}
+	reader := bufio.NewReader(entryReadFile)
+
 	// create log meta file in os
 	metaFile, err := os.Create(metaFileName(baseFileName))
 	if err != nil {
-		entryFile.Close()
+		entryReadFile.Close()
+		entryWriteFile.Close()
 		return nil, err
 	}
 
 	// create the log file structure in memory
 	log = &LogFile{
 		byteOrder:      binary.LittleEndian,
-		entryWriteFile: entryFile,
+		entryWriteFile: entryWriteFile,
+		entryReadFile:  entryReadFile,
+		reader:         reader,
 		metaFile:       metaFile,
 		maxSizeBytes:   maxFileSizeBytes,
 	}
@@ -428,6 +440,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				// moved tail far enough and we have space for a new record
 				return nil
 			}
+			// 
 			entry, err := log.ReadEntry(sym)
 			if err == nil {
 				reclen := entry.SizeBytes()

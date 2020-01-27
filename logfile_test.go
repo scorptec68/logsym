@@ -313,6 +313,8 @@ func ExampleLogFile2() {
 
 	// 1. Setting up the log and writing to the disk file
 
+	// 5 entries and 300 bytes will cause log rotation as you can't
+	// fit 5 entries into 300 bytes of data.
 	log, sym, err := createLog("testfile", 5, 300)
 	if err != nil {
 		fmt.Printf("Log create error: %v", err)
