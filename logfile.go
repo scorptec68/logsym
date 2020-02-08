@@ -202,7 +202,7 @@ func LogFileCreate(baseFileName string, maxFileSizeBytes uint64) (log *LogFile, 
 	// this is at start and used to move the tail onwards
 	entryReadFile, err := os.Open(logFileName(baseFileName))
 	if err != nil {
-		entryWriteFile.Close();
+		entryWriteFile.Close()
 		return nil, err
 	}
 	reader := bufio.NewReader(entryReadFile)
@@ -434,19 +434,23 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 
 	tailGap := log.tailOffset - log.headOffset
 	sizeAvailable := tailGap
+	fmt.Printf("Tail push for new rec size of %v - avail of %v\n", newRecSize, sizeAvailable)
 	if tailGap >= 0 { // tail in front of head
 		for {
 			if uint64(newRecSize) <= sizeAvailable {
 				// moved tail far enough and we have space for a new record
+				fmt.Printf("Moved tail far enough. available=%v, newRecSize=%v\n", sizeAvailable, newRecSize)
 				return nil
 			}
-			// 
+			//
 			entry, err := log.ReadEntry(sym)
 			if err == nil {
 				reclen := entry.SizeBytes()
 				sizeAvailable += uint64(reclen)  // size engulfs old tail record
 				log.tailOffset += uint64(reclen) // tail moves forward to newer record
+				fmt.Printf("Move tail, tail=%v, avail=%v\n", log.tailOffset, sizeAvailable)
 			} else if err == io.EOF {
+				fmt.Printf("We hit EOF, no more tail entries to read\n")
 				// we hit the end and no more tail entries to read
 				// BUT if there is a gap at the end it might be
 				// big enough for the head entry
@@ -457,9 +461,11 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				endGap := log.maxSizeBytes - log.tailOffset
 				if uint64(newRecSize) <= sizeAvailable+endGap {
 					// then fit in the end gap
+					fmt.Printf("Fit into end gap\n")
 					sizeAvailable += endGap
 				} else {
 					// zero out where head is and move head around
+					fmt.Printf("Zero our where head is and move head around\n")
 					sizeAvailable = 0
 					log.headOffset = 0
 					log.wrapNum++
@@ -492,6 +498,7 @@ func (log *LogFile) updateHeadTail() error {
 	// it is not written there yet but will be there when we next write it
 	log.headOffset = uint64(offset)
 
+	fmt.Printf("Update head %v and tail %v\n", log.headOffset, log.tailOffset)
 	data := metaData{HeadOffset: log.headOffset, TailOffset: log.tailOffset, MaxSizeBytes: log.maxSizeBytes, WrapNum: log.wrapNum}
 	return log.writeMetaData(data)
 }
@@ -513,11 +520,13 @@ func (lsn *LSN) wrap() {
 // Note: if an entry would wrap then don't do a partial write but instead start
 // from the beginning of the file with the new entry.
 func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
+	fmt.Printf("Adding log entry=%v\n", entry)
 
 	// Wrap case on 1st iteration
 	// then we would go over the end of the log file
 	// so start overwriting the beginning of the file
 	if log.wrapNum == 0 && log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
+		fmt.Printf("Do an internal log wrap\n")
 		log.headOffset = 0
 		log.tailOffset = 0
 		log.wrapNum++
