@@ -84,9 +84,9 @@ func tStamp2String(tstamp uint64) string {
 	return t.Format("02/01/2006, 15:04:05")
 }
 
-// StringRel returns string version of log entry with relative timestamp from now.
+// StringRelTime returns string version of log entry with relative timestamp from now.
 // Useful for testing purposes.
-func (entry LogEntry) StringRel() string {
+func (entry LogEntry) StringRelTime() string {
 	now := uint64(time.Now().UnixNano())
 	diff := now - entry.timeStamp
 	diffSec := diff / 1000000000
@@ -527,6 +527,9 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 	// so start overwriting the beginning of the file
 	if log.wrapNum == 0 && log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
 		fmt.Printf("Do an internal log wrap\n")
+		// TODO: need to write some marker at the end of the last record or know we are at EOF
+		// ie. at EOF or have filler space upto EOF
+		// Do we mark last valid record in any way different or just zero data at end?
 		log.headOffset = 0
 		log.tailOffset = 0
 		log.wrapNum++

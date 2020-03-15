@@ -154,19 +154,19 @@ func ExampleLogFile() {
 
 	log, sym, err := createLog("testfile", 5, 32*1024)
 	if err != nil {
-		fmt.Printf("Log create error: %v", err)
+		fmt.Printf("Log create error: %v\n", err)
 		return
 	}
 	time.Sleep(1 * time.Second)
 	err = createAddEntries(log, sym, 3)
 	if err != nil {
-		fmt.Printf("Add entries error: %v", err)
+		fmt.Printf("Add entries error: %v\n", err)
 		return
 	}
 	time.Sleep(2 * time.Second)
 	err = createAddEntries(log, sym, 1)
 	if err != nil {
-		fmt.Printf("Add entries error: %v", err)
+		fmt.Printf("Add entries error: %v\n", err)
 		return
 	}
 	log.LogFileClose()
@@ -177,7 +177,7 @@ func ExampleLogFile() {
 	// open log for reading
 	log, err = LogFileOpenRead("testfile")
 	if err != nil {
-		fmt.Printf("Log open error: %v", err)
+		fmt.Printf("Log open error: %v\n", err)
 		return
 	}
 	defer log.LogFileClose()
@@ -189,11 +189,11 @@ func ExampleLogFile() {
 				fmt.Printf("Reached end of log file\n")
 				break
 			}
-			fmt.Printf("Log read error: %v", err)
+			fmt.Printf("Log read error: %v\n", err)
 			return
 		}
 
-		fmt.Printf("%v", readEntry.StringRel())
+		fmt.Printf("%v", readEntry.StringRelTime())
 		symEntry, ok := sym.SymFileGetEntry(readEntry.SymbolID())
 		if ok {
 			fmt.Printf("%v\n", symEntry)
@@ -313,38 +313,50 @@ func ExampleLogFile2() {
 
 	// 1. Setting up the log and writing to the disk file
 
+	//
 	// Want entries to overflow log size for rotation to occur
-	log, sym, err := createLog("testfile", 5, 280)
+	// So ensure that the log size is too small to handle all the entries
+	// so that it will have to rotate and overwrite oldest entries.
+	//
+	log, sym, err := createLog("testfile", 4, 280)
+	//log, sym, err := createLog("testfile", 3, 280)
 	if err != nil {
-		fmt.Printf("Log create error: %v", err)
+		fmt.Printf("Log create error: %v\n", err)
 		return
 	}
-
 	log.LogFileClose()
+	
+	fmt.Printf("\n--- The log file after creating it ---\n")
 	fmt.Printf("%v", log)
 
+	fmt.Printf("\n--- Read in log file ---\n")
 	// open log for reading
 	log, err = LogFileOpenRead("testfile")
 	if err != nil {
-		fmt.Printf("Log open error: %v", err)
+		fmt.Printf("Log open error: %v\n", err)
 		return
 	}
 	defer log.LogFileClose()
 
 	for i := 0; ; i++ {
+		// Get the next entry
 		readEntry, err := log.ReadEntry(sym)
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Reached end of log file\n")
 				break
 			}
-			fmt.Printf("Log read error: %v", err)
+			fmt.Printf("Log read error: %v\n", err)
 			return
 		}
 
-		fmt.Printf("%v", readEntry.StringRel())
+		// dump the data entry
+		fmt.Printf("%v", readEntry.StringRelTime())
+		
+		// Get the associated symbol entry
 		symEntry, ok := sym.SymFileGetEntry(readEntry.SymbolID())
 		if ok {
+			// dump the symbol entry
 			fmt.Printf("%v\n", symEntry)
 		}
 	}
