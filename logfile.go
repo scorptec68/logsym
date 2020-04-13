@@ -431,21 +431,24 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 	//        head   tail                  maxsize
 	//         |-gap-|
 	// loop reading in records from the tail
-	// until the accumlated size (including head-tail gap is greater than the new rec size
+	// until the accumulated size (including head-tail gap is greater than the new rec size
 	// tail points to oldest complete record
 
 	tailGap := log.tailOffset - log.headOffset
 	sizeAvailable := tailGap
 	fmt.Printf("Tail push for new rec size of %v - avail of %v\n", newRecSize, sizeAvailable)
 	if tailGap >= 0 { // tail in front of head
+	    // set read pos to the tail
+		log.entryReadFile.Seek(int64(log.tailOffset), 0)
 		for {
 			if uint64(newRecSize) <= sizeAvailable {
 				// moved tail far enough and we have space for a new record
 				fmt.Printf("Moved tail far enough. available=%v, newRecSize=%v\n", sizeAvailable, newRecSize)
 				return nil
 			}
-			//
-			entry, err := log.ReadEntry(sym)
+			// TODO:
+			// read entry from tail - so need to set read file pos to the tail offset
+			entry, err := log.ReadEntryData(sym)
 			if err == nil {
 				reclen := entry.SizeBytes()
 				sizeAvailable += uint64(reclen)  // size engulfs old tail record
