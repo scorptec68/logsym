@@ -127,7 +127,7 @@ func TestLogFile(t *testing.T) {
 
 	// read each entry and compare with what we expect should be there
 	for i := 0; ; i++ {
-		readEntry, err := log.ReadEntry(sym)
+		readEntry, err := log.ReadEntry(sym, i == 0)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -183,7 +183,7 @@ func ExampleLogFile() {
 	defer log.LogFileClose()
 
 	for i := 0; ; i++ {
-		readEntry, err := log.ReadEntry(sym)
+		readEntry, err := log.ReadEntry(sym, i == 0)
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Reached end of log file\n")
@@ -340,7 +340,7 @@ func ExampleLogFile2() {
 
 	for i := 0; ; i++ {
 		// Get the next entry
-		readEntry, err := log.ReadEntry(sym)
+		readEntry, err := log.ReadEntry(sym, i == 0)
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Reached end of log file\n")

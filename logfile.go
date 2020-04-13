@@ -54,6 +54,7 @@ type metaData struct {
 	HeadOffset   uint64 // byte offset to where the next log entry should go
 	TailOffset   uint64 // byte offset to start of the the oldest log entry
 	MaxSizeBytes uint64 // maximum size in bytes of the data log
+	NumSizeBytes uint64 // number of bytes being used in file
 	WrapNum      uint64 // wrap number or cycle number
 }
 
@@ -333,9 +334,12 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	if err != nil {
 		return nil, err
 	}
+	
+	// ???? where do we update the log from the metadata???
 
 	// position us at the start of the entry data file
 	// seek to tail - want to read from tail to head
+	fmt.Printf("seek to tail: %v\n", metaData.TailOffset)
 	_, err = log.entryReadFile.Seek(int64(metaData.TailOffset), 0)
 
 	log.reader = bufio.NewReader(log.entryReadFile)
@@ -520,7 +524,8 @@ func (log *LogFile) updateHeadTail() error {
 	log.headOffset = uint64(offset)
 
 	fmt.Printf("Update head %v and tail %v\n", log.headOffset, log.tailOffset)
-	data := metaData{HeadOffset: log.headOffset, TailOffset: log.tailOffset, MaxSizeBytes: log.maxSizeBytes, WrapNum: log.wrapNum}
+	data := metaData{HeadOffset: log.headOffset, TailOffset: log.tailOffset, MaxSizeBytes: log.maxSizeBytes, 
+		NumSizeBytes: log.numSizeBytes, WrapNum: log.wrapNum}
 	return log.writeMetaData(data)
 }
 
@@ -613,7 +618,7 @@ func (entry *LogEntry) SizeBytes() uint32 {
  * Check if we reached the end when we reach the HEAD
  * Check if we reached the end of file when reached the size of file.
  */
-func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
+func (log *LogFile) ReadEntry(sym *SymFile, isFirst bool) (entry LogEntry, err error) {
 	offset, err := log.getReadPos()
 	if err != nil {
 		return entry, err
@@ -621,7 +626,8 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	
 	// Need to check if reached the head
 	// in which case we need to stop
-	if uint64(offset) >= log.headOffset {
+	if uint64(offset) >= log.headOffset && !isFirst {
+	    fmt.Printf("offset = %v, head = %v\n", offset, log.headOffset)	
 		return entry, io.EOF
 	}
 
