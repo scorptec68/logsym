@@ -31,6 +31,7 @@ type LogFile struct {
 	tailOffset     uint64           // offset into file where earliest record is
 	wrapNum        uint64           // how many times wrapped
 	maxSizeBytes   uint64           // maximum size in bytes that the log record can grow to
+	numSizeBytes   uint64           // number of bytes actually used in the file
 	byteOrder      binary.ByteOrder // the byte ordering of the numbers
 }
 
@@ -349,6 +350,7 @@ func (log LogFile) String() string {
 	fmt.Fprintf(&str, "  headOffset: %v\n", log.headOffset)
 	fmt.Fprintf(&str, "  tailOffset: %v\n", log.tailOffset)
 	fmt.Fprintf(&str, "  wrapNum: %v\n", log.wrapNum)
+	fmt.Fprintf(&str, "  numSizeBytes: %v\n", log.numSizeBytes)
 	fmt.Fprintf(&str, "  maxSizeBytes: %v\n", log.maxSizeBytes)
 	fmt.Fprintf(&str, "  byteOrder: %v\n", log.byteOrder)
 
@@ -469,11 +471,11 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 					sizeAvailable = 0
 					log.headOffset = 0
 					log.wrapNum++
-					log.entryWriteFile.Seek(0, 0)
+					log.setWriteZeroPos()
 					log.nextLogID.wrap()
 				}
 				log.tailOffset = 0 // wrap around tail
-				_, err = log.entryReadFile.Seek(0, 0)
+				_, err = log.setReadZeroPos()
 				if err != nil {
 					return err
 				}
@@ -485,11 +487,27 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 	return nil
 }
 
+func (log *LogFile) getWritePos() (int64, error) {
+	return log.entryWriteFile.Seek(0, 1)
+}
+
+func (log *LogFile) getReadPos() (int64, error) {
+	return log.entryReadFile.Seek(0, 1)
+}
+
+func (log *LogFile) setReadZeroPos() (int64, error) {
+	return log.entryReadFile.Seek(0, 0)
+}
+
+func (log *LogFile) setWriteZeroPos() (int64, error) {
+	return log.entryWriteFile.Seek(0, 0)
+}
+
 // updateHeadTail updates the meta file with the head ant tail pointer
 // and other relevant log parameters
 func (log *LogFile) updateHeadTail() error {
 	// where are we in the log data file?
-	offset, err := log.entryWriteFile.Seek(0, 1)
+	offset, err := log.getWritePos()
 	if err != nil {
 		return err
 	}
@@ -527,13 +545,17 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 	// so start overwriting the beginning of the file
 	if log.wrapNum == 0 && log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
 		fmt.Printf("Do an internal log wrap\n")
+		
 		// TODO: need to write some marker at the end of the last record or know we are at EOF
 		// ie. at EOF or have filler space upto EOF
 		// Do we mark last valid record in any way different or just zero data at end?
+		// Note the highest point after valid data.
+		log.numSizeBytes = log.headOffset
+		
 		log.headOffset = 0
 		log.tailOffset = 0
 		log.wrapNum++
-		log.entryWriteFile.Seek(0, 0)
+		log.setWriteZeroPos()
 		log.nextLogID.wrap()
 	}
 
@@ -583,6 +605,36 @@ func (entry *LogEntry) SizeBytes() uint32 {
 	return uint32(headerLen) + sizeOfValues(entry.valueList)
 }
 
+/*
+ * Wrapper around ReadEntryData
+ * Check if we reached the end when we reach the HEAD
+ * Check if we reached the end of file when reached the size of file.
+ */
+func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
+	offset, err := log.getReadPos()
+	if err != nil {
+		return entry, err
+	}
+	
+	// Need to check if reached the head
+	// in which case we need to stop
+	if uint64(offset) >= log.headOffset {
+		return entry, io.EOF
+	}
+
+	// Need to check if reached end of viable data
+	// then need to wrap to start of file
+	if uint64(offset) >= log.numSizeBytes {
+	    // wrap to start	
+	    _, err = log.setReadZeroPos()
+		if err != nil {
+			return entry, err
+		}
+	}
+
+	return log.ReadEntryData(sym)
+}
+
 // ReadEntry reads a log entry from the current position in the log file.
 //
 // It needs the symFile to be read in first so that it can know the types associated
@@ -601,7 +653,7 @@ func (entry *LogEntry) SizeBytes() uint32 {
  * <types stored in the sym file>
  * type sizes: 8 bit, 32 bit, 64 bit, 32 bit len + len bytes
  */
-func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
+func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 	err = nil
 
 	// logID LSN
