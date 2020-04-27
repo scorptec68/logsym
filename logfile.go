@@ -32,6 +32,7 @@ type LogFile struct {
 	wrapNum        uint64           // how many times wrapped
 	maxSizeBytes   uint64           // maximum size in bytes that the log record can grow to
 	numSizeBytes   uint64           // number of bytes actually used in the file
+	numRecords     uint64           // number of records in the log
 	byteOrder      binary.ByteOrder // the byte ordering of the numbers
 }
 
@@ -55,6 +56,7 @@ type metaData struct {
 	TailOffset   uint64 // byte offset to start of the the oldest log entry
 	MaxSizeBytes uint64 // maximum size in bytes of the data log
 	NumSizeBytes uint64 // number of bytes being used in file
+	NumRecords   uint64 // number of records in log file
 	WrapNum      uint64 // wrap number or cycle number
 }
 
@@ -424,9 +426,13 @@ func (log *LogFile) readMetaData() (data metaData, err error) {
 //   if we can't fit then record entry starts at beginning of file
 //   and we push the tail from there.
 
-// Move the tail to accommodate the new record
+// We are trying to write to where the head is but there
+// may not be enough room because we bump into the tail.
+// So move the tail to accommodate the new record
 // we will have to read log records from the tail to work out
 // where the next non overlapping one starts
+// A record does not span around the end of the file -
+// it will move to the start of the file if necessary.
 func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 
 	// lap >= 2
@@ -457,8 +463,10 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				reclen := entry.SizeBytes()
 				sizeAvailable += uint64(reclen)  // size engulfs old tail record
 				log.tailOffset += uint64(reclen) // tail moves forward to newer record
-				fmt.Printf("Move tail, tail=%v, avail=%v\n", log.tailOffset, sizeAvailable)
+				log.numRecords--
+				fmt.Printf("Move tail, tail=%v, avail=%v, numRecs=%v\n", log.tailOffset, sizeAvailable, log.numRecords)
 			} else if err == io.EOF {
+				// TODO: why don't we continue tail pushing after wrapping??????
 				fmt.Printf("We hit EOF, no more tail entries to read\n")
 				// we hit the end and no more tail entries to read
 				// BUT if there is a gap at the end it might be
@@ -474,7 +482,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 					sizeAvailable += endGap
 				} else {
 					// zero out where head is and move head around
-					fmt.Printf("Zero our where head is and move head around\n")
+					fmt.Printf("Zero our where head is and move head around to the start\n")
 					sizeAvailable = 0
 					log.headOffset = 0
 					log.wrapNum++
@@ -525,7 +533,7 @@ func (log *LogFile) updateHeadTail() error {
 
 	fmt.Printf("Update head %v and tail %v\n", log.headOffset, log.tailOffset)
 	data := metaData{HeadOffset: log.headOffset, TailOffset: log.tailOffset, MaxSizeBytes: log.maxSizeBytes, 
-		NumSizeBytes: log.numSizeBytes, WrapNum: log.wrapNum}
+		NumSizeBytes: log.numSizeBytes, WrapNum: log.wrapNum, NumRecords: log.numRecords}
 	return log.writeMetaData(data)
 }
 
@@ -582,7 +590,9 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 	if err != nil {
 		return err
 	}
-	//fmt.Printf("len of write entry: %v\n", len)
+	
+	log.numRecords++
+	fmt.Printf("len of write entry: %v, numRecs: %v\n", len, log.numRecords)
 
 	// update meta file - head points to next spot to write to
 	// unless it is time to wrap to the start again
@@ -613,12 +623,33 @@ func (entry *LogEntry) SizeBytes() uint32 {
 	return uint32(headerLen) + sizeOfValues(entry.valueList)
 }
 
+func (log *LogFile) validZone(offset uint64) bool {
+	// Read from Tail to Head
+    if log.headOffset > log.tailOffset {
+    	// T.....o.....H
+    	// read left to right from tail to head
+        return log.tailOffset <= offset && offset <= log.tailOffset 
+	} else if log.headOffset < log.tailOffset {
+		// ....H     T......
+		// read left to right until hit EOF and then from start to the head
+		return offset <= log.headOffset || offset>= log.tailOffset
+	} else {
+        // .......TH.......		
+        // valid everywhere but stop when get to head a 2nd time
+        // offset back to where we started
+        // Idea: Check if seen element before and if so then stop
+        // So do checking outside of read
+        return true
+	}
+}
+
+
 /*
  * Wrapper around ReadEntryData
  * Check if we reached the end when we reach the HEAD
  * Check if we reached the end of file when reached the size of file.
  */
-func (log *LogFile) ReadEntry(sym *SymFile, isFirst bool) (entry LogEntry, err error) {
+func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	offset, err := log.getReadPos()
 	if err != nil {
 		return entry, err
@@ -626,7 +657,7 @@ func (log *LogFile) ReadEntry(sym *SymFile, isFirst bool) (entry LogEntry, err e
 	
 	// Need to check if reached the head
 	// in which case we need to stop
-	if uint64(offset) >= log.headOffset && !isFirst {
+	if !log.validZone(uint64(offset)) {
 	    fmt.Printf("offset = %v, head = %v\n", offset, log.headOffset)	
 		return entry, io.EOF
 	}

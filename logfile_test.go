@@ -318,8 +318,9 @@ func ExampleLogFile2() {
 	// So ensure that the log size is too small to handle all the entries
 	// so that it will have to rotate and overwrite oldest entries.
 	//
-	log, sym, err := createLog("testfile", 4, 280)
-	//log, sym, err := createLog("testfile", 3, 280)
+	numEntries := 4
+	fmt.Printf("Number of log entries to write %v\n", numEntries)
+	log, sym, err := createLog("testfile", numEntries, 280)
 	if err != nil {
 		fmt.Printf("Log create error: %v\n", err)
 		return
@@ -338,18 +339,18 @@ func ExampleLogFile2() {
 	}
 	defer log.LogFileClose()
 
-	for i := 0; ; i++ {
+	for i := 0; i < log.NumEntries(); i++ {
 		// Get the next entry
-		readEntry, err := log.ReadEntry(sym, i == 0)
+		readEntry, err := log.ReadEntry(sym)
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Reached end of log file\n")
 				break
 			}
 			fmt.Printf("Log read error: %v\n", err)
-			return
+			break
 		}
-
+		
 		// dump the data entry
 		fmt.Printf("%v", readEntry.StringRelTime())
 		
