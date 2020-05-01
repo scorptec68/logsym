@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	stdlog "log"
 	"os"
 	"sort"
 	"strconv"
@@ -237,7 +238,7 @@ func symFileReadin(baseFileName string) (msg2Entries map[string]*SymbolEntry,
 		if err != nil {
 			return nil, nil, err
 		}
-		//fmt.Printf("entry: %v\n", entry)
+		stdlog.Printf("entry: %v\n", entry)
 		msg2Entries[entry.keyString()] = &entry
 		id2Entries[entry.symID] = &entry
 	}
@@ -298,10 +299,10 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	if err != nil {
 		return 0, err
 	}
-	//fmt.Printf("len of write entry: %v\n", len)
+	stdlog.Printf("len of write entry: %v\n", len)
 
 	sym.nextSymID += SymID(len)
-	//fmt.Printf("sym.nextSymID: %v\n", sym.nextSymID)
+	stdlog.Printf("sym.nextSymID: %v\n", sym.nextSymID)
 
 	sym.msg2Entries[entry.keyString()] = &entry
 	sym.id2Entries[entry.symID] = &entry
@@ -324,28 +325,28 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
-	//fmt.Printf("symID: %v\n", entry.symID)
+	stdlog.Printf("symID: %v\n", entry.symID)
 
 	// read numAccesses
 	err = binary.Read(r, byteOrder, &entry.numAccesses)
 	if err != nil {
 		return err
 	}
-	//fmt.Printf("numAccesses: %v\n", entry.numAccesses)
+	stdlog.Printf("numAccesses: %v\n", entry.numAccesses)
 
 	// read level
 	err = binary.Read(r, byteOrder, &entry.level)
 	if err != nil {
 		return err
 	}
-	//fmt.Printf("level: %v\n", entry.level)
+	stdlog.Printf("level: %v\n", entry.level)
 
 	// read line number
 	err = binary.Read(r, byteOrder, &entry.line)
 	if err != nil {
 		return err
 	}
-	//fmt.Printf("line: %v\n", entry.line)
+	stdlog.Printf("line: %v\n", entry.line)
 
 	// message string length
 	var lenBytes uint32
@@ -353,7 +354,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
-	//fmt.Printf("msg len: %v\n", lenBytes)
+	stdlog.Printf("msg len: %v\n", lenBytes)
 
 	// message string
 	msgBytes := make([]byte, lenBytes)
@@ -365,14 +366,14 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		return fmt.Errorf("Failed to read %v bytes for message", lenBytes)
 	}
 	entry.message = string(msgBytes[:lenBytes])
-	//fmt.Printf("msg: %v\n", entry.message)
+	stdlog.Printf("msg: %v\n", entry.message)
 
 	// file name length
 	err = binary.Read(r, byteOrder, &lenBytes)
 	if err != nil {
 		return err
 	}
-	//fmt.Printf("fname len: %v\n", lenBytes)
+	stdlog.Printf("fname len: %v\n", lenBytes)
 
 	// file name
 	fnameBytes := make([]byte, lenBytes)
@@ -384,7 +385,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		return fmt.Errorf("Failed to read %v bytes for file name", lenBytes)
 	}
 	entry.fname = string(fnameBytes[:lenBytes])
-	//fmt.Printf("fname: %v\n", entry.fname)
+	stdlog.Printf("fname: %v\n", entry.fname)
 
 	// read in all the key type pairs
 	var numKeys uint32
@@ -392,7 +393,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	if err != nil {
 		return err
 	}
-	//fmt.Printf("num keys: %v\n", numKeys)
+	stdlog.Printf("num keys: %v\n", numKeys)
 
 	entry.keyTypeList = make([]KeyType, numKeys)
 	for i := 0; i < int(numKeys); i++ {
@@ -403,7 +404,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
-		//fmt.Printf("type: %v\n", keyType.ValueType)
+		stdlog.Printf("type: %v\n", keyType.ValueType)
 
 		// read key length
 		var keyLen uint32
@@ -411,7 +412,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
-		//fmt.Printf("key len: %v\n", keyLen)
+		stdlog.Printf("key len: %v\n", keyLen)
 
 		// read key string data
 		keyBytes := make([]byte, keyLen)
@@ -423,7 +424,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 			return fmt.Errorf("Failed to read %v bytes for key data got %v bytes", keyLen, n)
 		}
 		keyType.Key = string(keyBytes)
-		//fmt.Printf("key: %v\n", keyType.Key)
+		stdlog.Printf("key: %v\n", keyType.Key)
 
 		entry.keyTypeList[i] = keyType
 	}
@@ -440,7 +441,7 @@ func (entry SymbolEntry) Write(w io.Writer) (length int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	//fmt.Printf("symId: %v\n", entry.symID)
+	stdlog.Printf("symId: %v\n", entry.symID)
 
 	length += binary.Size(entry.numAccesses)
 	err = binary.Write(w, byteOrder, entry.numAccesses)

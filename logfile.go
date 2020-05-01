@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	stdlog "log"
 	"os"
 	"strings"
 	"time"
@@ -32,7 +33,7 @@ type LogFile struct {
 	wrapNum        uint64           // how many times wrapped
 	maxSizeBytes   uint64           // maximum size in bytes that the log record can grow to
 	numSizeBytes   uint64           // number of bytes actually used in the file
-	numRecords     uint64           // number of records in the log
+	NumEntries     uint64           // number of entries in the log
 	byteOrder      binary.ByteOrder // the byte ordering of the numbers
 }
 
@@ -56,7 +57,7 @@ type metaData struct {
 	TailOffset   uint64 // byte offset to start of the the oldest log entry
 	MaxSizeBytes uint64 // maximum size in bytes of the data log
 	NumSizeBytes uint64 // number of bytes being used in file
-	NumRecords   uint64 // number of records in log file
+	NumEntries   uint64 // number of entries in log file
 	WrapNum      uint64 // wrap number or cycle number
 }
 
@@ -341,7 +342,7 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 
 	// position us at the start of the entry data file
 	// seek to tail - want to read from tail to head
-	fmt.Printf("seek to tail: %v\n", metaData.TailOffset)
+	stdlog.Printf("seek to tail: %v\n", metaData.TailOffset)
 	_, err = log.entryReadFile.Seek(int64(metaData.TailOffset), 0)
 
 	log.reader = bufio.NewReader(log.entryReadFile)
@@ -446,14 +447,14 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 
 	tailGap := log.tailOffset - log.headOffset
 	sizeAvailable := tailGap
-	fmt.Printf("Tail push for new rec size of %v - avail of %v\n", newRecSize, sizeAvailable)
+	stdlog.Printf("Tail push for new rec size of %v - avail of %v\n", newRecSize, sizeAvailable)
 	if tailGap >= 0 { // tail in front of head
 	    // set read pos to the tail
 		log.entryReadFile.Seek(int64(log.tailOffset), 0)
 		for {
 			if uint64(newRecSize) <= sizeAvailable {
 				// moved tail far enough and we have space for a new record
-				fmt.Printf("Moved tail far enough. available=%v, newRecSize=%v\n", sizeAvailable, newRecSize)
+				stdlog.Printf("Moved tail far enough. available=%v, newRecSize=%v\n", sizeAvailable, newRecSize)
 				return nil
 			}
 			// TODO:
@@ -463,11 +464,11 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				reclen := entry.SizeBytes()
 				sizeAvailable += uint64(reclen)  // size engulfs old tail record
 				log.tailOffset += uint64(reclen) // tail moves forward to newer record
-				log.numRecords--
-				fmt.Printf("Move tail, tail=%v, avail=%v, numRecs=%v\n", log.tailOffset, sizeAvailable, log.numRecords)
+				log.NumEntries--
+				stdlog.Printf("Move tail over 1 record, tail=%v, avail=%v, numRecs=%v\n", log.tailOffset, sizeAvailable, log.NumEntries)
 			} else if err == io.EOF {
 				// TODO: why don't we continue tail pushing after wrapping??????
-				fmt.Printf("We hit EOF, no more tail entries to read\n")
+				stdlog.Printf("We hit EOF, no more tail entries to read\n")
 				// we hit the end and no more tail entries to read
 				// BUT if there is a gap at the end it might be
 				// big enough for the head entry
@@ -478,11 +479,11 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				endGap := log.maxSizeBytes - log.tailOffset
 				if uint64(newRecSize) <= sizeAvailable+endGap {
 					// then fit in the end gap
-					fmt.Printf("Fit into end gap\n")
+					stdlog.Printf("Fit into end gap\n")
 					sizeAvailable += endGap
 				} else {
 					// zero out where head is and move head around
-					fmt.Printf("Zero our where head is and move head around to the start\n")
+					stdlog.Printf("Zero our where head is and move head around to the start\n")
 					sizeAvailable = 0
 					log.headOffset = 0
 					log.wrapNum++
@@ -531,9 +532,9 @@ func (log *LogFile) updateHeadTail() error {
 	// it is not written there yet but will be there when we next write it
 	log.headOffset = uint64(offset)
 
-	fmt.Printf("Update head %v and tail %v\n", log.headOffset, log.tailOffset)
+	stdlog.Printf("Update head %v and tail %v\n", log.headOffset, log.tailOffset)
 	data := metaData{HeadOffset: log.headOffset, TailOffset: log.tailOffset, MaxSizeBytes: log.maxSizeBytes, 
-		NumSizeBytes: log.numSizeBytes, WrapNum: log.wrapNum, NumRecords: log.numRecords}
+		NumSizeBytes: log.numSizeBytes, WrapNum: log.wrapNum, NumEntries: log.NumEntries}
 	return log.writeMetaData(data)
 }
 
@@ -554,13 +555,13 @@ func (lsn *LSN) wrap() {
 // Note: if an entry would wrap then don't do a partial write but instead start
 // from the beginning of the file with the new entry.
 func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
-	fmt.Printf("Adding log entry=%v\n", entry)
+	stdlog.Printf("Adding log entry=%v\n", entry)
 
 	// Wrap case on 1st iteration
 	// then we would go over the end of the log file
 	// so start overwriting the beginning of the file
 	if log.wrapNum == 0 && log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
-		fmt.Printf("Do an internal log wrap\n")
+		stdlog.Printf("Do an internal log wrap\n")
 		
 		// TODO: need to write some marker at the end of the last record or know we are at EOF
 		// ie. at EOF or have filler space upto EOF
@@ -591,8 +592,8 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 		return err
 	}
 	
-	log.numRecords++
-	fmt.Printf("len of write entry: %v, numRecs: %v\n", len, log.numRecords)
+	log.NumEntries++
+	stdlog.Printf("len of write entry: %v, numRecs: %v\n", entry.SizeBytes(), log.NumEntries)
 
 	// update meta file - head points to next spot to write to
 	// unless it is time to wrap to the start again
@@ -603,7 +604,7 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 
 	log.nextLogID.inc()
 
-	//fmt.Printf("log.nextLogID: %v\n", log.nextLogID)
+	stdlog.Printf("log.nextLogID: %v\n", log.nextLogID)
 	return nil
 }
 
@@ -658,7 +659,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	// Need to check if reached the head
 	// in which case we need to stop
 	if !log.validZone(uint64(offset)) {
-	    fmt.Printf("offset = %v, head = %v\n", offset, log.headOffset)	
+	    stdlog.Printf("offset = %v, head = %v\n", offset, log.headOffset)	
 		return entry, io.EOF
 	}
 
@@ -701,14 +702,14 @@ func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 	if err != nil {
 		return entry, err
 	}
-	//fmt.Printf("read logId: %v\n", entry.logID)
+	stdlog.Printf("read logId: %v\n", entry.logID)
 
 	// symID
 	err = binary.Read(log.reader, log.byteOrder, &entry.symbolID)
 	if err != nil {
 		return entry, err
 	}
-	//fmt.Printf("symId: %v\n", entry.symbolID)
+	stdlog.Printf("symId: %v\n", entry.symbolID)
 
 	// Get typeList from the symbol file
 	symEntry, ok := sym.SymFileGetEntry(entry.symbolID)
@@ -725,7 +726,7 @@ func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 	if err != nil {
 		return entry, err
 	}
-	//fmt.Printf("timestamp: %v\n", entry.timeStamp)
+	stdlog.Printf("timestamp: %v\n", entry.timeStamp)
 
 	// length of value data
 	var valLen uint32
@@ -768,7 +769,7 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	if err != nil {
 		return 0, err
 	}
-	//fmt.Printf("logId: %v\n", entry.logID)
+	stdlog.Printf("logId: %v\n", entry.logID)
 
 	// symID
 	length += binary.Size(entry.symbolID)
@@ -776,7 +777,7 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	if err != nil {
 		return 0, err
 	}
-	//fmt.Printf("symId: %v\n", entry.symbolID)
+	stdlog.Printf("symId: %v\n", entry.symbolID)
 
 	// timestamp
 	length += binary.Size(entry.timeStamp)
@@ -784,7 +785,7 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	if err != nil {
 		return 0, err
 	}
-	//fmt.Printf("timestamp: %v\n", entry.timeStamp)
+	stdlog.Printf("timestamp: %v\n", entry.timeStamp)
 
 	// length of value data
 	length += 4
@@ -793,7 +794,7 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	if err != nil {
 		return 0, err
 	}
-	//fmt.Printf("value len: %v\n", valLen)
+	stdlog.Printf("value len: %v\n", valLen)
 
 	// value data
 	// Note: no type info is stored in the data log
@@ -846,7 +847,7 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 	valueList = make([]interface{}, 0)
 	for i := 0; i < len(keyTypeList); i++ {
 		keyType := keyTypeList[i]
-		//fmt.Printf("reading key value: %v\n", keyType.Key)
+		stdlog.Printf("reading key value: %v\n", keyType.Key)
 
 		switch keyType.ValueType {
 		case TypeUint8:
@@ -937,8 +938,8 @@ func readValueList(r io.Reader, byteOrder binary.ByteOrder, keyTypeList []KeyTyp
 			}
 			valueList = append(valueList, b)
 		}
-		//fmt.Printf("%d: valueList = %v\n", i, valueList)
+		stdlog.Printf("%d: valueList = %v\n", i, valueList)
 	}
-	//fmt.Printf("valueList = %v\n", valueList)
+	stdlog.Printf("valueList = %v\n", valueList)
 	return valueList, err
 }
