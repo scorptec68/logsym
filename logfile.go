@@ -338,7 +338,13 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 		return nil, err
 	}
 	
-	// ???? where do we update the log from the metadata???
+	// Update the log from the metadata
+	log.headOffset = metaData.HeadOffset
+	log.tailOffset = metaData.TailOffset
+	log.NumEntries = metaData.NumEntries
+	log.maxSizeBytes = metaData.MaxSizeBytes
+	log.numSizeBytes = metaData.NumSizeBytes
+	log.wrapNum = metaData.WrapNum
 
 	// position us at the start of the entry data file
 	// seek to tail - want to read from tail to head
@@ -353,6 +359,7 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 func (log LogFile) String() string {
 	var str strings.Builder
 	fmt.Fprintf(&str, "LogFile\n")
+	fmt.Fprintf(&str, "  numEntries: %v\n", log.NumEntries)
 	fmt.Fprintf(&str, "  nextLogId: %v\n", log.nextLogID)
 	fmt.Fprintf(&str, "  headOffset: %v\n", log.headOffset)
 	fmt.Fprintf(&str, "  tailOffset: %v\n", log.tailOffset)
@@ -519,7 +526,7 @@ func (log *LogFile) setWriteZeroPos() (int64, error) {
 	return log.entryWriteFile.Seek(0, 0)
 }
 
-// updateHeadTail updates the meta file with the head ant tail pointer
+// updateHeadTail updates the meta file with the head and tail pointer
 // and other relevant log parameters
 func (log *LogFile) updateHeadTail() error {
 	// where are we in the log data file?
@@ -659,7 +666,7 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	// Need to check if reached the head
 	// in which case we need to stop
 	if !log.validZone(uint64(offset)) {
-	    stdlog.Printf("offset = %v, head = %v\n", offset, log.headOffset)	
+	    stdlog.Printf("Report EOF - offset = %v, head = %v\n", offset, log.headOffset)
 		return entry, io.EOF
 	}
 

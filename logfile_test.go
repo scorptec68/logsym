@@ -342,6 +342,7 @@ func ExampleLogFile2() {
 	var i uint64
 	for i = 0; i < log.NumEntries; i++ {
 		// Get the next entry
+		fmt.Printf("Entry: %v\n", i)
 		readEntry, err := log.ReadEntry(sym)
 		if err != nil {
 			if err == io.EOF {
