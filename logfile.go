@@ -636,7 +636,7 @@ func (log *LogFile) validZone(offset uint64) bool {
     if log.headOffset > log.tailOffset {
     	// T.....o.....H
     	// read left to right from tail to head
-        return log.tailOffset <= offset && offset <= log.tailOffset 
+        return log.tailOffset <= offset && offset <= log.headOffset 
 	} else if log.headOffset < log.tailOffset {
 		// ....H     T......
 		// read left to right until hit EOF and then from start to the head

@@ -1,0 +1,23 @@
+#! /bin/sh
+# PaperCut QA Test No. 001
+# $Revision: 1.1 $
+#
+# Basic log write and read back in test
+#
+# Copyright (c) 2020 (Tim).  All Rights Reserved.
+#
+
+seq=`basename $0`
+echo "QA output created by $seq"
+
+# get standard environment, filters and checks
+SCRIPT_DIR=$(cd $(dirname $0) && pwd)
+. ${SCRIPT_DIR}/common.test
+
+tmp=$(mktemp -t pc-tests-$seq)
+here=`pwd`
+status=0	# success is the default!
+trap "rm -f $tmp.*; exit \$status" 0 1 2 3 15
+
+# real QA test starts here
+go run  test_logfile.go 1 2>$seq.log

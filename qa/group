@@ -1,0 +1,21 @@
+# QA groups control
+#
+# $Id: group,v 1.2 2006/01/22 20:10:54 kenj Exp $
+#
+# define groups and default owners
+# do not start group name with a digit
+#
+
+# catch-all
+#
+other
+
+
+# logging groups
+symtest
+logtest
+
+# test-group association ... one line per test
+#
+001 other
+002 other
