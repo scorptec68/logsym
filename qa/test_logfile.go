@@ -52,6 +52,65 @@ func createValueKeyListFixed(i int) (valueList []interface{}, keyTypes []logsym.
 	return valueList, keyTypes
 }
 
+func createValueKeyListVariable(i int) (valueList []interface{}, keyTypes []logsym.KeyType) {
+	which := i % 6
+
+	keyTypes = make([]logsym.KeyType, 1)
+	
+	switch which {
+	case 0:
+		keyTypes[0].Key = "bool key"
+		keyTypes[0].ValueType = logsym.TypeBoolean
+	case 1:
+		keyTypes[0].Key = "u32 key"
+		keyTypes[0].ValueType = logsym.TypeUint32
+	case 2:
+		keyTypes[0].Key = "u64 key"
+		keyTypes[0].ValueType = logsym.TypeUint64
+	case 3:
+		keyTypes[0].Key = "f32 key"
+		keyTypes[0].ValueType = logsym.TypeFloat32
+	case 4:
+		keyTypes[0].Key = "f64 key"
+		keyTypes[0].ValueType = logsym.TypeFloat64
+	case 5:
+		keyTypes[0].Key = "string key"
+		keyTypes[0].ValueType = logsym.TypeString
+	}
+
+	// variables
+	var b bool
+	var x32 uint32
+	var x64 uint64
+	var f32 float32
+	var f64 float64
+	var s string
+
+	b = true
+	x32 = 42 + uint32(i)
+	x64 = 43 + uint64(i)
+	f32 = 3.1415 + float32(i)
+	f64 = 0.623712 + float64(i)
+	s = fmt.Sprintf("hi there %d", i)
+
+	switch which {
+	case 0:
+		valueList = append(valueList, b)
+	case 1:
+		valueList = append(valueList, x32)
+	case 2:
+		valueList = append(valueList, x64)
+	case 3:
+		valueList = append(valueList, f32)
+	case 4:
+		valueList = append(valueList, f64)
+	case 5:
+		valueList = append(valueList, s)
+	}
+	
+	return valueList, keyTypes
+}
+
 func createAddEntries(log *logsym.LogFile, sym *logsym.SymFile, numEntries int, createValFunc CreateValFuncType) error {
 
 	for i := 0; i < numEntries; i++ {
@@ -204,6 +263,31 @@ func ExampleWrapPerfectFit() {
     readPrintLogFile(fname)
 }
 
+func ExampleWrapVariableFit() {
+	fname := "testfile"
+
+	//
+	// Want entries to overflow log size for rotation to occur
+	// So ensure that the log size is too small to handle all the entries
+	// so that it will have to rotate and overwrite oldest entries.
+	//
+	numEntries := 50
+	fmt.Printf("Number of log entries to write %v\n", numEntries)
+	log, sym, err := createLog(fname, numEntries, createValueKeyListVariable, 100)
+	if err != nil {
+		fmt.Printf("Log create error: %v\n", err)
+		return
+	}
+	log.LogFileClose()
+	sym.SymFileWriteAll()
+	sym.SymFileClose()
+
+	fmt.Printf("\n--- The log file after creating it ---\n")
+	fmt.Printf("%v", log)
+
+	readPrintLogFile(fname)
+}
+
 func main() {
 	args := os.Args[1:]
 
@@ -217,5 +301,6 @@ func main() {
 	switch cmd {
 	case "1": ExampleDiffTimes()
     case "2": ExampleWrapPerfectFit()
-    }
+	case "3": ExampleWrapVariableFit()
+	}
 }

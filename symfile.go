@@ -317,7 +317,7 @@ func (sym *SymFile) SymFileAddEntry(entry SymbolEntry) (SymID, error) {
 	if err != nil {
 		return 0, err
 	}
-	stdlog.Printf("len of write entry: %v\n", len)
+	stdlog.Printf("len of sym write entry: %v\n", len)
 
 	sym.nextSymID += SymID(len)
 	stdlog.Printf("sym.nextSymID: %v\n", sym.nextSymID)

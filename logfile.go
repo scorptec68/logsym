@@ -600,7 +600,7 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 	}
 	
 	log.NumEntries++
-	stdlog.Printf("len of write entry: %v, numRecs: %v\n", entry.SizeBytes(), log.NumEntries)
+	stdlog.Printf("len of log write entry: %v, numRecs: %v\n", entry.SizeBytes(), log.NumEntries)
 
 	// update meta file - head points to next spot to write to
 	// unless it is time to wrap to the start again
