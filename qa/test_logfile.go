@@ -11,7 +11,9 @@ import (
 
 // Test the log data file module
 
-func createValueKeyList(i int) (valueList []interface{}, keyTypes []logsym.KeyType) {
+type CreateValFuncType func(int) (valueList []interface{}, keyTypes []logsym.KeyType)
+
+func createValueKeyListFixed(i int) (valueList []interface{}, keyTypes []logsym.KeyType) {
 	keyTypes = make([]logsym.KeyType, 6)
 	keyTypes[0].Key = "bool key"
 	keyTypes[0].ValueType = logsym.TypeBoolean
@@ -50,10 +52,10 @@ func createValueKeyList(i int) (valueList []interface{}, keyTypes []logsym.KeyTy
 	return valueList, keyTypes
 }
 
-func createAddEntries(log *logsym.LogFile, sym *logsym.SymFile, numEntries int) error {
+func createAddEntries(log *logsym.LogFile, sym *logsym.SymFile, numEntries int, createValFunc CreateValFuncType) error {
 
 	for i := 0; i < numEntries; i++ {
-		valueList, keyTypes := createValueKeyList(i)
+		valueList, keyTypes := createValFunc(i)
 		iStr := strconv.Itoa(i)
 		msgStr := "test message " + iStr
 		fileStr := "testfile" + iStr
@@ -76,7 +78,7 @@ func createAddEntries(log *logsym.LogFile, sym *logsym.SymFile, numEntries int) 
 	return nil
 }
 
-func createLog(fname string, numEntries int, logSize uint64) (*logsym.LogFile, *logsym.SymFile, error) {
+func createLog(fname string, numEntries int, createValFunc CreateValFuncType, logSize uint64) (*logsym.LogFile, *logsym.SymFile, error) {
 
 	log, err := logsym.LogFileCreate(fname, logSize)
 	if err != nil {
@@ -91,7 +93,7 @@ func createLog(fname string, numEntries int, logSize uint64) (*logsym.LogFile, *
 		return nil, nil, err
 	}
 
-	err = createAddEntries(log, sym, numEntries)
+	err = createAddEntries(log, sym, numEntries, createValFunc)
 	if err != nil {
 		fmt.Printf("Log add entries error: %v", err)
 		log.LogFileClose()
@@ -148,21 +150,21 @@ func readPrintLogFile(fname string) {
 
 func ExampleDiffTimes() {
 	fname := "testfile"
-	log, sym, err := createLog(fname, 5, 32*1024)
+	log, sym, err := createLog(fname, 5, createValueKeyListFixed, 32*1024)
 	if err != nil {
 		fmt.Printf("Log create error: %v\n", err)
 		return
 	}
 	
 	time.Sleep(1 * time.Second)
-	err = createAddEntries(log, sym, 3)
+	err = createAddEntries(log, sym, 3, createValueKeyListFixed)
 	if err != nil {
 		fmt.Printf("Add entries error: %v\n", err)
 		return
 	}
 	
 	time.Sleep(2 * time.Second)
-	err = createAddEntries(log, sym, 1)
+	err = createAddEntries(log, sym, 1, createValueKeyListFixed)
 	if err != nil {
 		fmt.Printf("Add entries error: %v\n", err)
 		return
@@ -187,7 +189,7 @@ func ExampleWrapPerfectFit() {
 	//
 	numEntries := 4
 	fmt.Printf("Number of log entries to write %v\n", numEntries)
-	log, sym, err := createLog(fname, numEntries, 280)
+	log, sym, err := createLog(fname, numEntries, createValueKeyListFixed, 280)
 	if err != nil {
 		fmt.Printf("Log create error: %v\n", err)
 		return
