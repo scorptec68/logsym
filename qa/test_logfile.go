@@ -137,9 +137,9 @@ func createAddEntries(log *logsym.LogFile, sym *logsym.SymFile, numEntries int, 
 	return nil
 }
 
-func createLog(fname string, numEntries int, createValFunc CreateValFuncType, logSize uint64) (*logsym.LogFile, *logsym.SymFile, error) {
+func createLog(fname string, numEntries int, createValFunc CreateValFuncType, logSizeBytes uint64) (*logsym.LogFile, *logsym.SymFile, error) {
 
-	log, err := logsym.LogFileCreate(fname, logSize)
+	log, err := logsym.LogFileCreate(fname, logSizeBytes)
 	if err != nil {
 		fmt.Printf("Log file create error: %v", err)
 		return nil, nil, err
@@ -263,7 +263,7 @@ func ExampleWrapPerfectFit() {
     readPrintLogFile(fname)
 }
 
-func ExampleWrapVariableFit() {
+func ExampleWrapVariableFit(numEntries int) {
 	fname := "testfile"
 
 	//
@@ -271,9 +271,8 @@ func ExampleWrapVariableFit() {
 	// So ensure that the log size is too small to handle all the entries
 	// so that it will have to rotate and overwrite oldest entries.
 	//
-	numEntries := 50
 	fmt.Printf("Number of log entries to write %v\n", numEntries)
-	log, sym, err := createLog(fname, numEntries, createValueKeyListVariable, 100)
+	log, sym, err := createLog(fname, numEntries, createValueKeyListVariable, 200)
 	if err != nil {
 		fmt.Printf("Log create error: %v\n", err)
 		return
@@ -301,6 +300,7 @@ func main() {
 	switch cmd {
 	case "1": ExampleDiffTimes()
     case "2": ExampleWrapPerfectFit()
-	case "3": ExampleWrapVariableFit()
+	case "3": ExampleWrapVariableFit(5)
+	case "4": ExampleWrapVariableFit(9)
 	}
 }

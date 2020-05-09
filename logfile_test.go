@@ -125,7 +125,7 @@ func TestLogFile(t *testing.T) {
 	}
 
 	// read each entry and compare with what we expect should be there
-	for i := 0; ; i++ {
+	for i := 0; i < int(log.NumEntries); i++ {
 		readEntry, err := log.ReadEntry(sym)
 		if err != nil {
 			if err == io.EOF {
@@ -138,7 +138,7 @@ func TestLogFile(t *testing.T) {
 		for j, readValue := range readEntry.GetValues() {
 			if readValue != expectedValues[j] {
 				t.Errorf("Log data written and read in mismatch")
-				t.Errorf("Wrote values: %v but read in %v", expectedValues[i], readValue)
+				t.Errorf("%d: Wrote values: %v but read in %v", i, expectedValues[i], readValue)
 				return
 
 			}

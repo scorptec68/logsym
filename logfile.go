@@ -488,10 +488,14 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 					// then fit in the end gap
 					stdlog.Printf("Fit into end gap\n")
 					sizeAvailable += endGap
+					
+					log.numSizeBytes = log.headOffset + uint64(newRecSize)
+					stdlog.Printf("Update numSizeBytes as we have moved into gap: %v", log.numSizeBytes)
 				} else {
 					// zero out where head is and move head around
-					stdlog.Printf("Zero our where head is and move head around to the start\n")
+					stdlog.Printf("Zero out where head is and move head around to the start (wrap)\n")
 					sizeAvailable = 0
+					log.numSizeBytes = log.headOffset
 					log.headOffset = 0
 					log.wrapNum++
 					log.setWriteZeroPos()
@@ -567,25 +571,24 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 	// Wrap case on 1st iteration
 	// then we would go over the end of the log file
 	// so start overwriting the beginning of the file
-	if log.wrapNum == 0 && log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
+	if log.tailOffset <= log.headOffset && log.headOffset+uint64(entry.SizeBytes()) > log.maxSizeBytes {
 		stdlog.Printf("Do an internal log wrap\n")
-		
+
 		// TODO: need to write some marker at the end of the last record or know we are at EOF
 		// ie. at EOF or have filler space upto EOF
 		// Do we mark last valid record in any way different or just zero data at end?
 		// Note the highest point after valid data.
 		log.numSizeBytes = log.headOffset
-		
+
 		log.headOffset = 0
-		log.tailOffset = 0
 		log.wrapNum++
 		log.setWriteZeroPos()
 		log.nextLogID.wrap()
-	}
-
-	// If we have wrapped then
-	// we need to update the tail before new record writes over it
-	if log.wrapNum > 0 {
+	} 
+	
+	if log.wrapNum > 0 && log.headOffset <= log.tailOffset {
+		// If we have wrapped then
+		// we need to update the tail before new record writes over it
 		log.tailPush(sym, entry.SizeBytes())
 	}
 
@@ -598,7 +601,7 @@ func (log *LogFile) LogFileAddEntry(sym *SymFile, entry LogEntry) error {
 	if err != nil {
 		return err
 	}
-	
+
 	log.NumEntries++
 	stdlog.Printf("len of log write entry: %v, numRecs: %v\n", entry.SizeBytes(), log.NumEntries)
 
