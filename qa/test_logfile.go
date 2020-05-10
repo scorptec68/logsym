@@ -184,7 +184,11 @@ func readPrintLogFile(fname string) {
 	var i uint64
 	for i = 0; i < log.NumEntries; i++ {
 		// Get the next entry
-		fmt.Printf("Entry: %v\n", i)
+		pos, err := log.GetReadPos()
+		if err != nil {
+			fmt.Printf("Error reading position in log: %v", err)
+		}
+		fmt.Printf("Entry: %v, pos: %v\n", i, pos)
 		readEntry, err := log.ReadEntry(sym)
 		if err != nil {
 			if err == io.EOF {
@@ -288,6 +292,7 @@ func ExampleWrapVariableFit(numEntries int) {
 }
 
 func main() {
+
 	args := os.Args[1:]
 
 	if len(args) == 0 {
@@ -296,11 +301,19 @@ func main() {
 	}
 
 	cmd := args[0]
+	numArg := 0
+	var err error
+	if len(args) > 1 {
+		numArg, err = strconv.Atoi(args[1])
+		if err != nil {
+			return
+		}
+	}
 
 	switch cmd {
 	case "1": ExampleDiffTimes()
     case "2": ExampleWrapPerfectFit()
 	case "3": ExampleWrapVariableFit(5)
-	case "4": ExampleWrapVariableFit(9)
+	case "4": ExampleWrapVariableFit(numArg)
 	}
 }

@@ -1,7 +1,6 @@
 package logsym
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -26,7 +25,6 @@ type LogFile struct {
 	entryReadFile  *os.File         // file pointer to the entry data for reading
 	entryWriteFile *os.File         // file pointer to the entry data for writing
 	metaFile       *os.File         // meta file for header type info e.g. head pointer
-	reader         *bufio.Reader    // buffered reader from log file
 	nextLogID      LSN              // current log sequence number that we are at
 	headOffset     uint64           // offset into file where next record goes
 	tailOffset     uint64           // offset into file where earliest record is
@@ -98,6 +96,7 @@ func (entry LogEntry) StringRelTime() string {
 
 	var str strings.Builder
 	fmt.Fprintf(&str, "LogEntry\n")
+	fmt.Fprintf(&str, "  size: %v\n", entry.SizeBytes())
 	fmt.Fprintf(&str, "  logId: %v\n", entry.logID)
 	fmt.Fprintf(&str, "  symId: %v\n", entry.symbolID)
 	fmt.Fprintf(&str, "  timeStamp rel: now - %v secs\n", diffSec)
@@ -112,6 +111,7 @@ func (entry LogEntry) String() string {
 
 	var str strings.Builder
 	fmt.Fprintf(&str, "LogEntry\n")
+	fmt.Fprintf(&str, "  size: %v\n", entry.SizeBytes())
 	fmt.Fprintf(&str, "  logId: %v\n", entry.logID)
 	fmt.Fprintf(&str, "  symId: %v\n", entry.symbolID)
 	fmt.Fprintf(&str, "  timeStamp: %v (%v)\n", tStamp2String(entry.timeStamp), entry.timeStamp)
@@ -210,7 +210,6 @@ func LogFileCreate(baseFileName string, maxFileSizeBytes uint64) (log *LogFile, 
 		entryWriteFile.Close()
 		return nil, err
 	}
-	reader := bufio.NewReader(entryReadFile)
 
 	// create log meta file in os
 	metaFile, err := os.Create(metaFileName(baseFileName))
@@ -225,7 +224,6 @@ func LogFileCreate(baseFileName string, maxFileSizeBytes uint64) (log *LogFile, 
 		byteOrder:      binary.LittleEndian,
 		entryWriteFile: entryWriteFile,
 		entryReadFile:  entryReadFile,
-		reader:         reader,
 		metaFile:       metaFile,
 		maxSizeBytes:   maxFileSizeBytes,
 	}
@@ -350,8 +348,6 @@ func LogFileOpenRead(baseFileName string) (log *LogFile, err error) {
 	// seek to tail - want to read from tail to head
 	stdlog.Printf("seek to tail: %v\n", metaData.TailOffset)
 	_, err = log.entryReadFile.Seek(int64(metaData.TailOffset), 0)
-
-	log.reader = bufio.NewReader(log.entryReadFile)
 
 	return log, err
 }
@@ -502,7 +498,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 					log.nextLogID.wrap()
 				}
 				log.tailOffset = 0 // wrap around tail
-				_, err = log.setReadZeroPos()
+				err = log.setReadZeroPos()
 				if err != nil {
 					return err
 				}
@@ -518,16 +514,18 @@ func (log *LogFile) getWritePos() (int64, error) {
 	return log.entryWriteFile.Seek(0, 1)
 }
 
-func (log *LogFile) getReadPos() (int64, error) {
+func (log *LogFile) GetReadPos() (int64, error) {
 	return log.entryReadFile.Seek(0, 1)
 }
 
-func (log *LogFile) setReadZeroPos() (int64, error) {
-	return log.entryReadFile.Seek(0, 0)
+func (log *LogFile) setReadZeroPos() (err error) {
+	_, err = log.entryReadFile.Seek(0, 0)
+	return err
 }
 
-func (log *LogFile) setWriteZeroPos() (int64, error) {
-	return log.entryWriteFile.Seek(0, 0)
+func (log *LogFile) setWriteZeroPos() (err error) {
+	_, err = log.entryWriteFile.Seek(0, 0)
+	return err
 }
 
 // updateHeadTail updates the meta file with the head and tail pointer
@@ -537,6 +535,11 @@ func (log *LogFile) updateHeadTail() error {
 	offset, err := log.getWritePos()
 	if err != nil {
 		return err
+	}
+	
+	if log.wrapNum == 0 {
+		// if we haven't wrapped yet then gradually increase numSizeBytes
+		log.numSizeBytes = uint64(offset)
 	}
 
 	// point to offset in the data file where the next log entry is due to go
@@ -661,7 +664,7 @@ func (log *LogFile) validZone(offset uint64) bool {
  * Check if we reached the end of file when reached the size of file.
  */
 func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
-	offset, err := log.getReadPos()
+	offset, err := log.GetReadPos()
 	if err != nil {
 		return entry, err
 	}
@@ -677,7 +680,8 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
 	// then need to wrap to start of file
 	if uint64(offset) >= log.numSizeBytes {
 	    // wrap to start	
-	    _, err = log.setReadZeroPos()
+	    stdlog.Printf("Reached end of viable data and wrapping to start for reading")
+	    err = log.setReadZeroPos()
 		if err != nil {
 			return entry, err
 		}
@@ -706,16 +710,18 @@ func (log *LogFile) ReadEntry(sym *SymFile) (entry LogEntry, err error) {
  */
 func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 	err = nil
+	
+	reader := log.entryReadFile
 
 	// logID LSN
-	err = binary.Read(log.reader, log.byteOrder, &entry.logID)
+	err = binary.Read(reader, log.byteOrder, &entry.logID)
 	if err != nil {
 		return entry, err
 	}
 	stdlog.Printf("read logId: %v\n", entry.logID)
 
 	// symID
-	err = binary.Read(log.reader, log.byteOrder, &entry.symbolID)
+	err = binary.Read(reader, log.byteOrder, &entry.symbolID)
 	if err != nil {
 		return entry, err
 	}
@@ -732,7 +738,7 @@ func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 	}
 
 	// timestamp
-	err = binary.Read(log.reader, log.byteOrder, &entry.timeStamp)
+	err = binary.Read(reader, log.byteOrder, &entry.timeStamp)
 	if err != nil {
 		return entry, err
 	}
@@ -740,7 +746,7 @@ func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 
 	// length of value data
 	var valLen uint32
-	err = binary.Read(log.reader, log.byteOrder, &valLen)
+	err = binary.Read(reader, log.byteOrder, &valLen)
 	if err != nil {
 		return entry, err
 	}
@@ -754,7 +760,7 @@ func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 	// }
 
 	// valuelist
-	entry.valueList, err = readValueList(log.reader, log.byteOrder, keyTypeList)
+	entry.valueList, err = readValueList(reader, log.byteOrder, keyTypeList)
 	if err != nil {
 		return entry, err
 	}

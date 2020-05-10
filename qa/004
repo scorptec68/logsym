@@ -20,4 +20,9 @@ status=0	# success is the default!
 trap "rm -f $tmp.*; exit \$status" 0 1 2 3 15
 
 # real QA test starts here
-go run test_logfile.go 4 2>$seq.log
+echo "Start of $seq.log" >$seq.log
+for i in {10..30}; do
+  echo "----------"
+  echo ""
+  go run test_logfile.go 4 $i 2>>$seq.log
+done

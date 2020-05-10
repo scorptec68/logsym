@@ -13,22 +13,25 @@ LogFile
   byteOrder: LittleEndian
 
 --- Read in log file ---
-Entry: 0
+Entry: 0, pos: 77
 LogEntry
+  size: 44
   logId: {0 2}
   symId: 137
   timeStamp rel: now - 0 secs
   value: 45
 Symbol Entry <symId: 137, numAccesses: 0, level: DEBUG, message: "test message 2", fname: "testfile2", line: 44, keyTypes: [<key: "u64 key", type: Uint64>]>
-Entry: 1
+Entry: 1, pos: 121
 LogEntry
+  size: 40
   logId: {0 3}
   symId: 205
   timeStamp rel: now - 0 secs
   value: 6.1415
 Symbol Entry <symId: 205, numAccesses: 0, level: DEBUG, message: "test message 3", fname: "testfile3", line: 45, keyTypes: [<key: "f32 key", type: Float32>]>
-Entry: 2
+Entry: 2, pos: 161
 LogEntry
+  size: 44
   logId: {1 0}
   symId: 273
   timeStamp rel: now - 0 secs
