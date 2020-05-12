@@ -453,6 +453,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 	stdlog.Printf("Tail push for new rec size of %v - avail of %v\n", newRecSize, sizeAvailable)
 	if tailGap >= 0 { // tail in front of head
 	    // set read pos to the tail
+	    stdlog.Printf("Seek to tail %v", log.tailOffset)
 		log.entryReadFile.Seek(int64(log.tailOffset), 0)
 		for {
 			if uint64(newRecSize) <= sizeAvailable {
@@ -460,9 +461,16 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				stdlog.Printf("Moved tail far enough. available=%v, newRecSize=%v\n", sizeAvailable, newRecSize)
 				return nil
 			}
-			// TODO:
+			var err error
+			var entry LogEntry
+			
 			// read entry from tail - so need to set read file pos to the tail offset
-			entry, err := log.ReadEntryData(sym)
+			if log.tailOffset >= log.numSizeBytes {
+				stdlog.Printf("Tail has reached end of data %v, equivalent to EOF", log.numSizeBytes)
+				err = io.EOF
+			} else {
+				entry, err = log.ReadEntryData(sym)
+			}
 			if err == nil {
 				reclen := entry.SizeBytes()
 				sizeAvailable += uint64(reclen)  // size engulfs old tail record
@@ -470,7 +478,6 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 				log.NumEntries--
 				stdlog.Printf("Move tail over 1 record, tail=%v, avail=%v, numRecs=%v\n", log.tailOffset, sizeAvailable, log.NumEntries)
 			} else if err == io.EOF {
-				// TODO: why don't we continue tail pushing after wrapping??????
 				stdlog.Printf("We hit EOF, no more tail entries to read\n")
 				// we hit the end and no more tail entries to read
 				// BUT if there is a gap at the end it might be
@@ -492,6 +499,7 @@ func (log *LogFile) tailPush(sym *SymFile, newRecSize uint32) error {
 					stdlog.Printf("Zero out where head is and move head around to the start (wrap)\n")
 					sizeAvailable = 0
 					log.numSizeBytes = log.headOffset
+					stdlog.Printf("Update numSizeBytes to head %v before moving head to zero", log.numSizeBytes)
 					log.headOffset = 0
 					log.wrapNum++
 					log.setWriteZeroPos()
@@ -540,6 +548,7 @@ func (log *LogFile) updateHeadTail() error {
 	if log.wrapNum == 0 {
 		// if we haven't wrapped yet then gradually increase numSizeBytes
 		log.numSizeBytes = uint64(offset)
+		stdlog.Printf("On 1st lap, increase numSizeBytes=%v", log.numSizeBytes)
 	}
 
 	// point to offset in the data file where the next log entry is due to go
@@ -725,7 +734,7 @@ func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 	if err != nil {
 		return entry, err
 	}
-	stdlog.Printf("symId: %v\n", entry.symbolID)
+	stdlog.Printf("read symId: %v\n", entry.symbolID)
 
 	// Get typeList from the symbol file
 	symEntry, ok := sym.SymFileGetEntry(entry.symbolID)
@@ -742,7 +751,7 @@ func (log *LogFile) ReadEntryData(sym *SymFile) (entry LogEntry, err error) {
 	if err != nil {
 		return entry, err
 	}
-	stdlog.Printf("timestamp: %v\n", entry.timeStamp)
+	stdlog.Printf("read timestamp: %v\n", entry.timeStamp)
 
 	// length of value data
 	var valLen uint32
@@ -785,7 +794,7 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	if err != nil {
 		return 0, err
 	}
-	stdlog.Printf("logId: %v\n", entry.logID)
+	stdlog.Printf("write logId: %v\n", entry.logID)
 
 	// symID
 	length += binary.Size(entry.symbolID)
@@ -793,7 +802,7 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	if err != nil {
 		return 0, err
 	}
-	stdlog.Printf("symId: %v\n", entry.symbolID)
+	stdlog.Printf("write symId: %v\n", entry.symbolID)
 
 	// timestamp
 	length += binary.Size(entry.timeStamp)
@@ -801,7 +810,7 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	if err != nil {
 		return 0, err
 	}
-	stdlog.Printf("timestamp: %v\n", entry.timeStamp)
+	stdlog.Printf("write timestamp: %v\n", entry.timeStamp)
 
 	// length of value data
 	length += 4
@@ -810,7 +819,7 @@ func (entry LogEntry) Write(w io.Writer, byteOrder binary.ByteOrder) (length int
 	if err != nil {
 		return 0, err
 	}
-	stdlog.Printf("value len: %v\n", valLen)
+	stdlog.Printf("write value len: %v\n", valLen)
 
 	// value data
 	// Note: no type info is stored in the data log
