@@ -219,12 +219,17 @@ func symFileReadin(baseFileName string) (msg2Entries map[string]*SymbolEntry,
 	id2Entries map[SymID]*SymbolEntry,
 	entries []*SymbolEntry,
 	err error) {
+	
+	stdlog.Printf("Reading in symbol file: %v", symFileName(baseFileName))
 
 	f, err := os.Open(symFileName(baseFileName))
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	defer f.Close()
+	
+	info, err := f.Stat()
+	stdlog.Printf("Sym file len = %v", info.Size())
 
 	msg2Entries = make(map[string]*SymbolEntry)
 	id2Entries = make(map[SymID]*SymbolEntry)
@@ -260,6 +265,7 @@ func SymFileReadAll(baseFileName string) (sym *SymFile, err error) {
 
 // Update the symFile on disk (with numAccesses etc)
 func (sym *SymFile) SymFileWriteAll() (err error) {
+	stdlog.Printf("Update all sym file with numAccesses")
     _, err = sym.file.Seek(0, 0)
 	if err != nil {
 		return err
@@ -347,6 +353,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 	stdlog.Printf("symID: %v\n", entry.symID)
 
 	// read numAccesses
+	// TODO: check for premature EOF part way through entry
 	err = binary.Read(r, byteOrder, &entry.numAccesses)
 	if err != nil {
 		return err
@@ -377,7 +384,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 
 	// message string
 	msgBytes := make([]byte, lenBytes)
-	n, err := r.Read(msgBytes)
+	n, err := io.ReadFull(r, msgBytes)
 	if err != nil {
 		return err
 	}
@@ -396,12 +403,12 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 
 	// file name
 	fnameBytes := make([]byte, lenBytes)
-	n, err = r.Read(fnameBytes)
+	n, err = io.ReadFull(r, fnameBytes)
 	if err != nil {
 		return err
 	}
 	if n != int(lenBytes) {
-		return fmt.Errorf("Failed to read %v bytes for file name", lenBytes)
+		return fmt.Errorf("Read %v bytes for file name but expected %v bytes: \"%v\"", n, lenBytes, string(fnameBytes[:n]))
 	}
 	entry.fname = string(fnameBytes[:lenBytes])
 	stdlog.Printf("fname: %v\n", entry.fname)
@@ -435,7 +442,7 @@ func (entry *SymbolEntry) Read(r io.Reader) (err error) {
 
 		// read key string data
 		keyBytes := make([]byte, keyLen)
-		n, err = r.Read(keyBytes)
+		n, err = io.ReadFull(r, keyBytes)
 		if err != nil {
 			return err
 		}

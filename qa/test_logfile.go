@@ -176,7 +176,7 @@ func readPrintLogFile(fname string) {
 
 	sym, err := logsym.SymFileReadAll(fname)
 	if err != nil {
-		fmt.Printf("Log open sym error: %v\n", err)
+		fmt.Printf("Error reading in all of sym file: %v\n", err)
 		return
 	}
 	defer sym.SymFileClose()
@@ -281,13 +281,24 @@ func ExampleWrapVariableFit(numEntries int) {
 		fmt.Printf("Log create error: %v\n", err)
 		return
 	}
-	log.LogFileClose()
-	sym.SymFileWriteAll()
-	sym.SymFileClose()
+	err = log.LogFileClose()
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+	}
+	
+	err = sym.SymFileWriteAll()
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+	}
+	
+	err = sym.SymFileClose()
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+	}
 
 	fmt.Printf("\n--- The log file after creating it ---\n")
 	fmt.Printf("%v", log)
-
+	
 	readPrintLogFile(fname)
 }
 
