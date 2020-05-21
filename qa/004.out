@@ -1,0 +1,49 @@
+QA output created by 004
+----------
+
+Number of log entries to write 1000
+
+--- The log file after creating it ---
+LogFile
+  numEntries: 4
+  nextLogId: {249 4}
+  headOffset: 161
+  tailOffset: 180
+  wrapNum: 249
+  numSizeBytes: 180
+  maxSizeBytes: 200
+  byteOrder: LittleEndian
+
+--- Read in log file ---
+Entry: 0, pos: 180
+LogEntry
+  size: 37
+  logId: {249 0}
+  symId: 72156
+  timeStamp rel: now - 0 secs
+  value: true
+Symbol Entry <symId: 72156, numAccesses: 0, level: DEBUG, message: "test message 996", fname: "testfile996", line: 1038, keyTypes: [<key: "bool key", type: Boolean>]>
+Entry: 1, pos: 37
+LogEntry
+  size: 40
+  logId: {249 1}
+  symId: 72229
+  timeStamp rel: now - 0 secs
+  value: 1039
+Symbol Entry <symId: 72229, numAccesses: 0, level: DEBUG, message: "test message 997", fname: "testfile997", line: 1039, keyTypes: [<key: "u32 key", type: Uint32>]>
+Entry: 2, pos: 77
+LogEntry
+  size: 44
+  logId: {249 2}
+  symId: 72301
+  timeStamp rel: now - 0 secs
+  value: 1041
+Symbol Entry <symId: 72301, numAccesses: 0, level: DEBUG, message: "test message 998", fname: "testfile998", line: 1040, keyTypes: [<key: "u64 key", type: Uint64>]>
+Entry: 3, pos: 121
+LogEntry
+  size: 40
+  logId: {249 3}
+  symId: 72373
+  timeStamp rel: now - 0 secs
+  value: 1002.1415
+Symbol Entry <symId: 72373, numAccesses: 0, level: DEBUG, message: "test message 999", fname: "testfile999", line: 1041, keyTypes: [<key: "f32 key", type: Float32>]>
